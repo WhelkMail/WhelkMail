@@ -1,0 +1,3 @@
+ALTER TABLE accounts ADD COLUMN archive_imap_bodies INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE imap_messages ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE imap_messages ADD COLUMN archive_key TEXT;

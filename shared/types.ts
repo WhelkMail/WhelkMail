@@ -1,0 +1,328 @@
+export type AccountKind = 'imap' | 'relay'
+export type StorageDriver = 'provider' | 'drive' | 'r2'
+export type AuthType = 'password' | 'oauth2'
+export type MailSecurity = 'tls' | 'starttls'
+export type ImapArchiveDriver = 'r2' | 'drive'
+export type Folder = 'inbox' | 'sent' | 'draft'
+export type MessageStatus = 'sent' | 'failed' | 'draft'
+export type LabelColor = 'blue' | 'emerald' | 'amber' | 'violet' | 'rose' | 'cyan' | 'lime'
+
+export interface Label {
+  id: string
+  name: string
+  color: LabelColor
+  createdAt: string
+}
+
+export interface Contact {
+  id: string
+  name: string
+  email: string
+  note: string
+  createdAt: string
+}
+
+export interface ContactInput {
+  name: string
+  email: string
+  note?: string
+}
+
+export type SyncStatus = 'idle' | 'partial' | 'done' | 'error'
+
+export interface MailboxSyncState {
+  folder: Folder
+  uidValidity: number | null
+  maxUid: number
+  minUid: number
+  backfillDone: boolean
+  status: SyncStatus
+  error: string | null
+  total: number
+  synced: number
+  lastSyncedAt: string | null
+}
+
+export interface SyncResult {
+  folders: MailboxSyncState[]
+  hasMore: boolean
+}
+
+export interface PushSubscriptionInput {
+  endpoint: string
+  keys: {
+    p256dh: string
+    auth: string
+  }
+  userAgent?: string
+}
+
+export interface PushPrefs {
+  accountId: string
+  email: string
+  enabled: boolean
+  folders: Folder[]
+}
+
+export interface DeletionLog {
+  id: string
+  accountId: string
+  messageId: string
+  status: string
+  error: string | null
+  createdAt: string
+}
+
+export interface MailFilter {
+  id: string
+  name: string
+  from: string | null
+  to: string | null
+  subject: string | null
+  hasWords: string | null
+  doesntHave: string | null
+  hasAttachment: boolean
+  labelIds: string[]
+  forwardTo: string[]
+  enabled: boolean
+  createdAt: string
+  lastForwardStatus: string | null
+  lastForwardError: string | null
+  lastForwardAt: string | null
+}
+
+export interface FilterInput {
+  name?: string
+  from?: string | null
+  to?: string | null
+  subject?: string | null
+  hasWords?: string | null
+  doesntHave?: string | null
+  hasAttachment?: boolean
+  labelIds?: string[]
+  forwardTo?: string[]
+  enabled?: boolean
+}
+
+export type SignatureMode = 'shared' | 'per_account'
+
+export interface AppSettings {
+  defaultSignature: string
+  signatureMode: SignatureMode
+}
+
+export interface Mailbox {
+  name: string | null
+  email: string
+}
+
+export interface AttachmentMeta {
+  index: number
+  filename: string
+  contentType: string
+  size: number
+}
+
+export interface Account {
+  id: string
+  email: string
+  displayName: string
+  kind: AccountKind
+  imapHost: string | null
+  imapPort: number | null
+  imapSecurity: MailSecurity | null
+  smtpHost: string | null
+  smtpPort: number | null
+  smtpSecurity: MailSecurity | null
+  username: string
+  authType: AuthType
+  oauthProvider: 'google' | 'microsoft' | null
+  connected: boolean
+  signature: string
+  incomingLabelId: string | null
+  archiveImapBodies: boolean
+  imapArchiveDriver: ImapArchiveDriver
+  deleteAfterArchive: boolean
+  autoSync: boolean
+  sentFolder: string
+  autoSavesSent: boolean
+  maxAttachmentBytes: number
+  storageDriver: StorageDriver
+  relayProvider: string | null
+  relayConfigured: boolean
+  driveConnected: boolean
+  r2Available: boolean
+  createdAt: string
+}
+
+export interface MessageSummary {
+  id: string
+  accountId: string
+  accountEmail: string
+  accountName: string
+  folder: Folder
+  from: Mailbox
+  to: Mailbox[]
+  cc: Mailbox[]
+  bcc: Mailbox[]
+  subject: string
+  snippet: string
+  date: string
+  unread: boolean
+  hasAttachments: boolean
+  status: MessageStatus
+  labelIds: string[]
+}
+
+export interface MessageDetail extends MessageSummary {
+  text: string
+  html: string | null
+  attachments: AttachmentMeta[]
+  size: number
+}
+
+export interface StorageOptions {
+  drive: boolean
+  r2: boolean
+}
+
+export interface AttachmentInput {
+  filename: string
+  contentType: string
+  dataBase64: string
+}
+
+export interface SendPayload {
+  accountId: string
+  draftId?: string
+  to: string[]
+  cc?: string[]
+  bcc?: string[]
+  subject: string
+  text: string
+  html?: string
+  attachments: AttachmentInput[]
+}
+
+export interface ComposeSeed {
+  accountId: string
+  to: string[]
+  cc: string[]
+  bcc: string[]
+  subject: string
+  text: string
+}
+
+export interface DraftPayload {
+  id: string
+  accountId: string
+  to: string[]
+  cc: string[]
+  bcc: string[]
+  subject: string
+  text: string
+  html: string | null
+  attachments: AttachmentInput[]
+}
+
+export interface DraftSavePayload {
+  accountId: string
+  draftId?: string
+  to: string[]
+  cc: string[]
+  bcc: string[]
+  subject: string
+  text: string
+  html?: string
+  attachments: AttachmentInput[]
+}
+
+export interface HealthStatus {
+  ok: boolean
+  driveConfigured: boolean
+  r2Configured: boolean
+  relayConfigured: boolean
+  relayProvider: string
+  relayLabel: string
+  maxAttachmentBytes: number
+  microsoftConfigured: boolean
+  googleMailConfigured: boolean
+  pushConfigured: boolean
+  cronConfigured: boolean
+}
+
+export interface AccountCreateInput {
+  kind: AccountKind
+  email: string
+  displayName: string
+  preset?: string
+  imapHost?: string
+  imapPort?: number
+  imapSecurity?: MailSecurity
+  smtpHost?: string
+  smtpPort?: number
+  smtpSecurity?: MailSecurity
+  username?: string
+  authType?: AuthType
+  oauthProvider?: 'google' | 'microsoft'
+  password?: string
+  autoSavesSent?: boolean
+  storageDriver?: StorageDriver
+  relayProvider?: string
+  relayApiKey?: string
+  relayApiSecret?: string
+  relayDomain?: string
+  relayRegion?: string
+  incomingLabelName?: string
+}
+
+export interface LabelInput {
+  name: string
+  color?: LabelColor
+}
+
+export interface AccountPatch {
+  displayName?: string
+  signature?: string
+  incomingLabelId?: string | null
+  archiveImapBodies?: boolean
+  imapArchiveDriver?: ImapArchiveDriver
+  deleteAfterArchive?: boolean
+  autoSync?: boolean
+  sentFolder?: string
+  autoSavesSent?: boolean
+  storageDriver?: StorageDriver
+  password?: string
+  username?: string
+  imapHost?: string
+  imapPort?: number
+  imapSecurity?: MailSecurity
+  smtpHost?: string
+  smtpPort?: number
+  smtpSecurity?: MailSecurity
+  relayProvider?: string
+  relayApiKey?: string
+  relayApiSecret?: string
+  relayDomain?: string
+  relayRegion?: string
+}
+
+export interface LoginResult {
+  ok: boolean
+  twoFactorRequired?: boolean
+  challenge?: string
+}
+
+export interface TwoFactorStatus {
+  enabled: boolean
+  recoveryRemaining: number
+}
+
+export interface TotpSetup {
+  secret: string
+  otpauth: string
+}
+
+export interface TotpEnableResult {
+  recoveryCodes: string[]
+}

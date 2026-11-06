@@ -1,0 +1,24 @@
+{
+  "name": "WhelkMail",
+  "short_name": "WhelkMail",
+  "description": "Self-hosted webmail client for IMAP and SMTP mailboxes",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fff7f2",
+  "theme_color": "#c5221f",
+  "icons": [
+    {
+      "src": "/whelkmail-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

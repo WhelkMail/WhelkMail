@@ -1,0 +1,43 @@
+# Copy this file to wrangler.toml and replace the placeholders with your own values.
+# Do not commit the real wrangler.toml of a personal deployment: database_id and
+# bucket names are account-scoped resource identifiers. For GitHub deployments,
+# configure the DB binding in the Pages dashboard instead.
+
+name = "whelkmail"
+compatibility_date = "2026-11-01"
+pages_build_output_dir = "./dist"
+
+[vars]
+RELAY_PROVIDER = "smtp2go"
+
+[[d1_databases]]
+binding = "DB"
+# The npm db:* scripts use "mail-client"; change both if you name it differently.
+database_name = "mail-client"
+# Local development can use this placeholder. Replace it with your D1 ID for
+# remote CLI commands and Pages deployments.
+database_id = "00000000-0000-0000-0000-000000000000"
+
+# Optional: enable the R2 body/attachment archive.
+# Create the bucket first, then uncomment this binding.
+# [[r2_buckets]]
+# binding = "BUCKET"
+# bucket_name = "<your-r2-bucket-name>"
+
+# Secrets are NOT stored in this file. Set them in the Pages dashboard
+# (Settings -> Variables and Secrets) or with the CLI, for example:
+#
+#   npx wrangler pages secret put APP_PASSWORD --project-name whelkmail
+#   npx wrangler pages secret put TOKEN_ENC_KEY --project-name whelkmail
+#   npx wrangler pages secret put GOOGLE_CLIENT_ID --project-name whelkmail
+#   npx wrangler pages secret put GOOGLE_CLIENT_SECRET --project-name whelkmail
+#   npx wrangler pages secret put GOOGLE_MAIL_CLIENT_ID --project-name whelkmail
+#   npx wrangler pages secret put GOOGLE_MAIL_CLIENT_SECRET --project-name whelkmail
+#   npx wrangler pages secret put MICROSOFT_CLIENT_ID --project-name whelkmail
+#   npx wrangler pages secret put MICROSOFT_CLIENT_SECRET --project-name whelkmail
+#   npx wrangler pages secret put RELAY_API_KEY --project-name whelkmail
+#   npx wrangler pages secret put RELAY_API_SECRET --project-name whelkmail
+#   npx wrangler pages secret put VAPID_PUBLIC_KEY --project-name whelkmail
+#   npx wrangler pages secret put VAPID_PRIVATE_KEY --project-name whelkmail
+#   npx wrangler pages secret put VAPID_SUBJECT --project-name whelkmail
+#   npx wrangler pages secret put CRON_SECRET --project-name whelkmail
