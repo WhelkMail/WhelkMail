@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WhelkMail — self-hosted webmail for the mailboxes you own</title>
+    <meta
+      name="description"
+      content="WhelkMail is a self-hosted webmail client for IMAP and SMTP accounts you already own. Cloudflare-native, privacy-first, MIT licensed."
+    />
+    <meta name="theme-color" content="#c5221f" />
+    <meta name="robots" content="index,follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="WhelkMail" />
+    <meta property="og:title" content="WhelkMail — one calm inbox for every mailbox" />
+    <meta
+      property="og:description"
+      content="A self-hosted, Cloudflare-native webmail client for the IMAP and SMTP accounts you already own."
+    />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="./" aria-label="WhelkMail home">
+          <img src="./logo.svg" width="28" height="28" alt="" />
+          <span>WhelkMail</span>
+        </a>
+        <nav class="site-nav" aria-label="Main">
+          <a href="#features">Features</a>
+          <a href="#security">Security</a>
+          <a href="#deploy">Deploy</a>
+          <a href="https://github.com/WhelkMail/WhelkMail">GitHub</a>
+        </nav>
+        <a class="button button-small" href="https://github.com/WhelkMail/WhelkMail#deploy-on-cloudflare">
+          Deploy your own
+        </a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">Self-hosted webmail · Cloudflare-native</p>
+            <h1>
+              Your mailboxes.<br />
+              Your domain.<br />
+              <span>One calm inbox.</span>
+            </h1>
+            <p class="lede">
+              WhelkMail turns the IMAP and SMTP accounts you already own into a fast,
+              familiar inbox. No mail server to run, no third-party inbox in the middle,
+              no lock-in.
+            </p>
+            <div class="actions">
+              <a class="button" href="https://github.com/WhelkMail/WhelkMail#deploy-on-cloudflare">
+                Deploy your own
+              </a>
+              <a class="button button-ghost" href="https://github.com/WhelkMail/WhelkMail">
+                View on GitHub
+              </a>
+            </div>
+            <ul class="hero-points" aria-label="Project highlights">
+              <li>MIT licensed</li>
+              <li>No telemetry</li>
+              <li>IMAP + SMTP</li>
+              <li>Optional TOTP 2FA</li>
+            </ul>
+          </div>
+
+          <div class="hero-visual" aria-hidden="true">
+            <div class="app-window">
+              <div class="app-topbar">
+                <span class="window-dot"></span>
+                <span class="window-dot"></span>
+                <span class="window-dot"></span>
+                <div class="app-search">Search mail</div>
+                <div class="app-avatar">M</div>
+              </div>
+              <div class="app-body">
+                <aside class="app-sidebar">
+                  <div class="side-item side-active">Inbox <span>12</span></div>
+                  <div class="side-item">Sent</div>
+                  <div class="side-item">Drafts <span>2</span></div>
+                  <div class="side-label">Labels</div>
+                  <div class="side-item"><i class="tag tag-blue"></i> Work</div>
+                  <div class="side-item"><i class="tag tag-green"></i> Personal</div>
+                  <div class="side-item"><i class="tag tag-amber"></i> Receipts</div>
+                </aside>
+                <div class="app-list">
+                  <div class="mail-row mail-unread">
+                    <div class="mail-top"><strong>Anna Riva</strong><span>09:41</span></div>
+                    <div class="mail-subject">Q3 roadmap and next steps</div>
+                    <div class="mail-snippet">Here is the deck we discussed — tell me what you think…</div>
+                  </div>
+                  <div class="mail-row">
+                    <div class="mail-top"><strong>Cloudflare</strong><span>08:12</span></div>
+                    <div class="mail-subject">Your weekly analytics report</div>
+                    <div class="mail-snippet">Traffic is up 18% week over week. Here is the breakdown…</div>
+                  </div>
+                  <div class="mail-row">
+                    <div class="mail-top"><strong>Marco</strong><span>Yesterday</span></div>
+                    <div class="mail-subject">Re: dinner on Friday?</div>
+                    <div class="mail-snippet">Works for me. Same place as last time?</div>
+                  </div>
+                  <div class="mail-row">
+                    <div class="mail-top"><strong>Stripe</strong><span>Yesterday</span></div>
+                    <div class="mail-subject">Your invoice is ready</div>
+                    <div class="mail-snippet">Invoice #0042 for the month of October…</div>
+                  </div>
+                </div>
+                <article class="app-reader">
+                  <p class="reader-meta">Anna Riva &lt;anna@example.com&gt;</p>
+                  <h3>Q3 roadmap and next steps</h3>
+                  <p>Hi,</p>
+                  <p>
+                    thanks for the call. I attached the deck we discussed. The short version:
+                    ship the inbox refresh first, then the archive improvements.
+                  </p>
+                  <p>Let me know if Friday works for a quick review.</p>
+                  <div class="reader-actions"><span>Reply</span><span>Forward</span></div>
+                </article>
+              </div>
+            </div>
+            <div class="glow"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="section">
+        <div class="wrap">
+          <p class="eyebrow">Everything you need</p>
+          <h2>One client. Every mailbox.</h2>
+          <p class="section-lede">
+            Gmail-style organization on top of the accounts you already use, with the
+            flexibility of a self-hosted tool.
+          </p>
+
+          <div class="cards">
+            <article class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="14" rx="2" />
+                  <path d="m3 7 9 6 9-6" />
+                </svg>
+              </div>
+              <h3>Every account, one view</h3>
+              <p>Gmail, Outlook, iCloud, Fastmail, Yahoo and custom domains side by side, with colored account labels and a shared address book.</p>
+            </article>
+
+            <article class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
+                  <circle cx="12" cy="12" r="4" />
+                </svg>
+              </div>
+              <h3>Labels and filters</h3>
+              <p>Create labels shared across accounts, apply them manually or automatically, and forward matching mail with the original EML attached.</p>
+            </article>
+
+            <article class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 7h16M4 12h16M4 17h10" />
+                  <circle cx="18" cy="17" r="2" />
+                </svg>
+              </div>
+              <h3>Sync that resumes</h3>
+              <p>Incremental, chunked IMAP metadata sync into D1. Start it manually or let the cron worker keep accounts fresh every five minutes.</p>
+            </article>
+
+            <article class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H20v14H6.5A2.5 2.5 0 0 1 4 16.5z" />
+                  <path d="M4 8h16M8 12h6" />
+                </svg>
+              </div>
+              <h3>Optional archive</h3>
+              <p>Keep bodies and attachments on your provider by default, or archive them to Cloudflare R2 or Google Drive when you want an independent copy.</p>
+            </article>
+
+            <article class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m13 2-9 12h6l-1 8 9-12h-6z" />
+                </svg>
+              </div>
+              <h3>Send-only domains</h3>
+              <p>Relay accounts for domains without SMTP, with SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet and Postmark support.</p>
+            </article>
+
+            <article class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="4" y="3" width="16" height="18" rx="2" />
+                  <path d="M8 7h8M8 11h8M8 15h5" />
+                </svg>
+              </div>
+              <h3>Contacts and signatures</h3>
+              <p>A shared address book with CSV import/export and autocomplete, plus one shared signature or a different signature per account.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="security" class="section section-dark">
+        <div class="wrap split">
+          <div>
+            <p class="eyebrow">Privacy by default</p>
+            <h2>Your mail stays yours.</h2>
+            <p class="section-lede">
+              WhelkMail reads from your provider and renders HTML as text. Remote images
+              and tracking pixels are never loaded. The optional archive is the only time
+              message bodies leave the provider.
+            </p>
+            <ul class="checklist">
+              <li>HTML email displayed as clean text, no remote content</li>
+              <li>Credentials encrypted at rest with AES-256-GCM</li>
+              <li>Optional TOTP two-factor authentication</li>
+              <li>Server-side sessions, revocable on logout</li>
+              <li>Login and 2FA rate limiting per IP</li>
+              <li>One-time OAuth state and PKCE for Google and Microsoft</li>
+              <li>CSP, HSTS and strict security headers</li>
+            </ul>
+          </div>
+          <div class="security-panel">
+            <div class="panel-row">
+              <span class="panel-dot"></span>
+              <div><strong>Not a mail server</strong><p>You keep using the providers you already trust. WhelkMail is the client.</p></div>
+            </div>
+            <div class="panel-row">
+              <span class="panel-dot"></span>
+              <div><strong>No telemetry</strong><p>No analytics, no third-party inbox, no data broker in the loop.</p></div>
+            </div>
+            <div class="panel-row">
+              <span class="panel-dot"></span>
+              <div><strong>Open source</strong><p>MIT licensed. Inspect it, fork it, self-host it on your own Cloudflare account.</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="deploy" class="section">
+        <div class="wrap">
+          <p class="eyebrow">Runs on Cloudflare</p>
+          <h2>Deploy in minutes, not weekends.</h2>
+          <p class="section-lede">
+            Pages Functions, D1 and <code>cloudflare:sockets</code>. No VPS, no containers,
+            no mail server to patch.
+          </p>
+
+          <div class="steps">
+            <div class="step">
+              <span class="step-number">01</span>
+              <h3>Connect your mailboxes</h3>
+              <p>Add Gmail, Outlook, iCloud, Yahoo or any IMAP/SMTP account. Credentials stay encrypted in your own D1 database.</p>
+            </div>
+            <div class="step">
+              <span class="step-number">02</span>
+              <h3>Deploy to your account</h3>
+              <p>Use the template, create a D1 database, set your secrets and connect the Pages project. The guide walks you through it.</p>
+            </div>
+            <div class="step">
+              <span class="step-number">03</span>
+              <h3>Optional: background sync</h3>
+              <p>Deploy the cron worker for automatic sync, new-mail notifications, forwarding and provider cleanup.</p>
+            </div>
+          </div>
+
+          <div class="code-card">
+            <div class="code-head"><span>Quick start</span><span>bash</span></div>
+            <pre><code>git clone https://github.com/WhelkMail/WhelkMail.git
+cd WhelkMail
+npm install
+cp wrangler.toml.example wrangler.toml
+npm run db:local</code></pre>
+          </div>
+          <p class="note">See the <a href="https://github.com/WhelkMail/WhelkMail/blob/main/docs/CLOUDFLARE.md">Cloudflare deployment guide</a> for bindings, secrets and OAuth setup.</p>
+        </div>
+      </section>
+
+      <section class="cta">
+        <div class="wrap cta-inner">
+          <div>
+            <p class="eyebrow">Take your inbox back</p>
+            <h2>Ready to run your own mail client?</h2>
+          </div>
+          <div class="actions">
+            <a class="button" href="https://github.com/WhelkMail/WhelkMail#deploy-on-cloudflare">Deploy your own</a>
+            <a class="button button-ghost" href="https://github.com/WhelkMail/WhelkMail">View on GitHub</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <a class="brand" href="./">
+          <img src="./logo.svg" width="24" height="24" alt="" />
+          <span>WhelkMail</span>
+        </a>
+        <p>Self-hosted webmail for the mailboxes you already own.</p>
+        <nav aria-label="Footer">
+          <a href="https://github.com/WhelkMail/WhelkMail">GitHub</a>
+          <a href="https://github.com/WhelkMail/WhelkMail/blob/main/docs/DOCUMENTATION.md">Documentation</a>
+          <a href="https://github.com/WhelkMail/WhelkMail/blob/main/LICENSE">MIT License</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>
