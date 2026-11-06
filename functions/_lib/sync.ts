@@ -7,14 +7,17 @@ import type {
 } from '../../shared/types'
 import type { AccountRow } from './db'
 import type { Env } from './env'
-import type { ImapHeader } from './imap/client'
-import { withImap, resolveFolderName } from './mail/imap'
+import type { ImapConnection, ImapHeader } from './imap/client'
+import { MISSING_FOLDER, withImap, resolveFolderName } from './mail/imap'
+import { applyAccountLabel, applyFilters } from './filters'
 import { getImapArchiveStorage, type StorageAdapter } from './storage'
 import { imapMessageId } from './mail/ids'
 import { dateOf, parseHeaders, toMailbox, toMailboxes } from './mail/parse'
 
-export const SYNC_FOLDERS: Folder[] = ['inbox', 'sent', 'draft']
+export const SYNC_FOLDERS: Folder[] = ['inbox', 'sent', 'draft', 'spam']
 const CHUNK_SIZE = 40
+const BACKFILL_WINDOW = 400
+const FLAG_WINDOW = 300
 
 export interface SyncRow {
   account_id: string
@@ -96,6 +99,19 @@ function emptyState(folder: Folder): MailboxSyncState {
     synced: 0,
     lastSyncedAt: null,
   }
+}
+
+export async function getSyncState(
+  env: Env,
+  accountId: string,
+  folder: Folder,
+): Promise<MailboxSyncState | null> {
+  const row = await env.DB.prepare(
+    'SELECT * FROM imap_sync WHERE account_id = ? AND folder = ?',
+  )
+    .bind(accountId, folder)
+    .first<SyncRow>()
+  return row ? toSyncState(row) : null
 }
 
 export async function getSyncStates(env: Env, accountId: string): Promise<MailboxSyncState[]> {
@@ -206,6 +222,37 @@ async function upsertSyncState(
       new Date().toISOString(),
     )
     .run()
+}
+
+export async function invalidateSync(
+  env: Env,
+  accountId: string,
+  folder: Folder,
+): Promise<void> {
+  await env.DB.prepare(
+    'UPDATE imap_sync SET last_synced_at = NULL WHERE account_id = ? AND folder = ?',
+  )
+    .bind(accountId, folder)
+    .run()
+}
+
+export async function queueSync(
+  env: Env,
+  account: AccountRow,
+  folder: Folder,
+  waitUntil: (promise: Promise<unknown>) => void,
+): Promise<void> {
+  await invalidateSync(env, account.id, folder).catch(() => undefined)
+  waitUntil(
+    runSyncChunk(env, account, folder).catch(async (error) => {
+      await markSyncError(
+        env,
+        account.id,
+        folder,
+        error instanceof Error ? error.message : String(error),
+      ).catch(() => undefined)
+    }),
+  )
 }
 
 export async function markSyncError(
@@ -327,6 +374,40 @@ async function pruneFolder(
   await env.DB.batch(statements)
 }
 
+async function newUidsSince(
+  connection: ImapConnection,
+  startUid: number,
+  uidNext: number | null,
+): Promise<number[]> {
+  if (uidNext !== null && uidNext <= startUid) {
+    return []
+  }
+  const uids =
+    uidNext === null
+      ? await connection.searchAll()
+      : await connection.searchUids(`${startUid}:*`)
+  return uids.filter((uid) => uid >= startUid).sort((left, right) => left - right)
+}
+
+async function backfillUids(
+  connection: ImapConnection,
+  minUid: number,
+  limit: number,
+): Promise<number[]> {
+  if (minUid <= 1) {
+    return (await connection.fetchUidsBySequence(1, limit)).sort((left, right) => left - right)
+  }
+  const start = Math.max(1, minUid - BACKFILL_WINDOW)
+  let older = await connection.searchUids(`${start}:${minUid - 1}`)
+  if (older.length === 0) {
+    older = await connection.fetchUidsBySequence(1, limit)
+  }
+  return older
+    .filter((uid) => uid < minUid)
+    .sort((left, right) => left - right)
+    .slice(-limit)
+}
+
 export async function runSyncChunk(
   env: Env,
   account: AccountRow,
@@ -347,11 +428,27 @@ export async function runSyncChunk(
   const chunkSize = archiveBodies ? 8 : CHUNK_SIZE
   let archiveMore = false
 
+  const syncStartedAt = Date.now()
+
   await withImap(env, account, async (connection) => {
-    const target = await resolveFolderName(connection, account, folder)
-    const details = await connection.selectWithDetails(target)
+    const target = await resolveFolderName(env, connection, account, folder)
+    let details
+    try {
+      details = await connection.selectWithDetails(target)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      if (folder !== 'spam' || !MISSING_FOLDER.test(detail)) {
+        throw error
+      }
+      try {
+        await connection.create(target)
+      } catch {
+        // It may already exist.
+      }
+      details = await connection.selectWithDetails(target)
+    }
     uidValidity = details.uidValidity
-    const allUids = (await connection.searchAll()).sort((left, right) => left - right)
+    const uidNext = details.uidNext
 
     if (row?.uid_validity && details.uidValidity && row.uid_validity !== details.uidValidity) {
       await env.DB.batch([
@@ -364,30 +461,48 @@ export async function runSyncChunk(
           folder,
         ),
       ])
+      await env.DB.prepare(
+        'DELETE FROM imap_body_cache WHERE account_id = ? AND folder = ?',
+      )
+        .bind(account.id, folder)
+        .run()
+        .catch(() => undefined)
       maxUid = 0
       minUid = 0
       backfillDone = false
     }
 
-    const newUids = maxUid === 0 ? allUids : allUids.filter((uid) => uid > maxUid)
     let uidsToFetch: number[] = []
     let phase: 'new' | 'backfill' | 'idle' = 'idle'
-    if (newUids.length > 0) {
-      uidsToFetch = maxUid === 0 ? newUids.slice(-chunkSize) : newUids.slice(0, chunkSize)
-      phase = 'new'
-    } else if (!backfillDone) {
-      const older = allUids.filter((uid) => minUid === 0 || uid < minUid)
-      if (older.length > 0) {
-        uidsToFetch = older.slice(-chunkSize)
-        phase = 'backfill'
-      } else {
-        backfillDone = true
+
+    if (maxUid === 0) {
+      const recent = await connection.searchRecentUids(chunkSize, uidNext)
+      if (recent.length > 0) {
+        uidsToFetch = recent.slice(-chunkSize)
+        phase = 'new'
+      } else if ((details.exists ?? 0) > 0) {
+        const allUids = (await connection.searchAll()).sort((left, right) => left - right)
+        uidsToFetch = allUids.slice(-chunkSize)
+        phase = 'new'
+      }
+    } else {
+      const newUids = await newUidsSince(connection, maxUid + 1, uidNext)
+      if (newUids.length > 0) {
+        uidsToFetch = newUids.slice(0, chunkSize)
+        phase = 'new'
+      } else if (!backfillDone) {
+        const older = await backfillUids(connection, minUid, chunkSize)
+        if (older.length > 0) {
+          uidsToFetch = older
+          phase = 'backfill'
+        }
       }
     }
 
+    const now = new Date().toISOString()
+
     if (uidsToFetch.length > 0) {
       const headers = await connection.fetchHeaders(uidsToFetch)
-      const now = new Date().toISOString()
       const parsed: {
         header: ImapHeader
         row: ImapMessageRow
@@ -473,6 +588,11 @@ export async function runSyncChunk(
           account.id,
           parsed.map((item) => ({ id: item.id, stableKey: item.stableKey, folder })),
         )
+        if (folder === 'inbox') {
+          const summaries = parsed.map((item) => imapMessageSummary(item.row, account))
+          await applyFilters(env, account.id, summaries)
+          await applyAccountLabel(env, account.id, account.incoming_label_id, summaries)
+        }
       }
 
       if (archiveStorage && parsed.length > 0) {
@@ -540,26 +660,72 @@ export async function runSyncChunk(
       archiveMore = (remaining?.count ?? 0) > 0
     }
 
-    if (!backfillDone && !allUids.some((uid) => uid < minUid)) {
-      backfillDone = true
+    if (maxUid > 0) {
+      const flagStart = Math.max(1, maxUid - FLAG_WINDOW)
+      const flagUids = await connection.searchUids(`${flagStart}:${maxUid}`)
+      const flags = await connection.fetchFlags(flagUids)
+      const updates: D1PreparedStatement[] = []
+      for (const item of flags) {
+        const unread =
+          folder === 'draft' || item.flags.some((flag) => flag.toLowerCase() === '\\seen') ? 0 : 1
+        updates.push(
+          env.DB.prepare(
+            'UPDATE imap_messages SET unread = ?, updated_at = ? WHERE account_id = ? AND folder = ? AND uid = ? AND unread <> ?',
+          ).bind(unread, now, account.id, folder, item.uid, unread),
+        )
+      }
+      if (updates.length > 0) {
+        await env.DB.batch(updates)
+      }
     }
-    const hasMore =
-      allUids.some((uid) => uid > maxUid) ||
-      (!backfillDone && allUids.some((uid) => uid < minUid)) ||
-      archiveMore
 
+    let hasOlder = false
+    if (!backfillDone) {
+      if (details.exists === 0 || minUid <= 1) {
+        backfillDone = true
+      } else {
+        try {
+          const lowest = await connection.firstUid()
+          if (lowest === null || lowest >= minUid) {
+            backfillDone = true
+          } else {
+            hasOlder = true
+          }
+        } catch {
+          hasOlder = true
+        }
+      }
+    }
+
+    let hasNew: boolean
+    if (uidNext !== null) {
+      hasNew =
+        uidNext > maxUid + 1 ? (await connection.searchUids(`${maxUid + 1}:*`)).length > 0 : false
+    } else {
+      hasNew = (await connection.searchAll()).some((uid) => uid > maxUid)
+    }
+
+    const hasMore = hasNew || hasOlder || archiveMore
+
+    let synced = await countMessages(env, account.id, folder)
     if (!hasMore) {
-      await pruneFolder(
-        env,
-        account.id,
-        folder,
-        allUids,
-        archiveStorage,
-        Boolean(account.delete_after_archive),
-      )
+      const needsPrune = details.exists === null || details.exists !== synced
+      if (needsPrune) {
+        const currentUids = (await connection.searchAll()).sort((left, right) => left - right)
+        if (currentUids.length > 0 || synced > 0) {
+          await pruneFolder(
+            env,
+            account.id,
+            folder,
+            currentUids,
+            archiveStorage,
+            Boolean(account.delete_after_archive),
+          )
+          synced = await countMessages(env, account.id, folder)
+        }
+      }
     }
 
-    const synced = await countMessages(env, account.id, folder)
     await upsertSyncState(env, account.id, folder, {
       uidValidity,
       maxUid,
@@ -567,11 +733,15 @@ export async function runSyncChunk(
       backfillDone,
       status: hasMore ? 'partial' : 'done',
       error: null,
-      total: allUids.length,
+      total: details.exists ?? synced,
       synced,
       lastSyncedAt: new Date().toISOString(),
     })
   })
+
+  console.log(
+    `[sync] ${account.id}/${folder} ${Date.now() - syncStartedAt}ms maxUid=${maxUid} minUid=${minUid} backfillDone=${backfillDone}`,
+  )
 
   const folders = await getSyncStates(env, account.id)
   const current = folders.find((item) => item.folder === folder)

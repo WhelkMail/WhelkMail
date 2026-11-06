@@ -220,7 +220,7 @@ export const api = {
     accountId: string,
     folder: Folder,
     labelId?: string | null,
-  ): Promise<{ messages: MessageSummary[]; errors: AccountError[] }> {
+  ): Promise<{ messages: MessageSummary[]; errors: AccountError[]; syncing?: boolean }> {
     const search = new URLSearchParams({ accountId, folder })
     if (labelId) {
       search.set('labelId', labelId)
@@ -229,6 +229,21 @@ export const api = {
   },
   message(id: string): Promise<{ message: MessageDetail }> {
     return request(`/api/messages/${encodeURIComponent(id)}`)
+  },
+  messageAction(
+    ids: string[],
+    action: 'delete' | 'spam' | 'move',
+    target?: 'inbox' | 'spam' | 'trash',
+  ): Promise<{
+    ok: boolean
+    moved: number
+    skipped: string[]
+    errors: { ids: string[]; message: string }[]
+  }> {
+    return request('/api/messages/actions', {
+      method: 'POST',
+      body: JSON.stringify({ ids, action, target }),
+    })
   },
   send(payload: SendPayload): Promise<{ ok: boolean; warning?: string; sentFolder?: string }> {
     return request('/api/messages/send', { method: 'POST', body: JSON.stringify(payload) })

@@ -64,6 +64,7 @@ export function attachmentMeta(email: Email): AttachmentMeta[] {
     filename: attachment.filename || `allegato-${index + 1}`,
     contentType: attachment.mimeType || 'application/octet-stream',
     size: contentSize(attachment.content),
+    contentId: attachment.contentId?.replace(/^<|>$/g, '') ?? null,
   }))
 }
 

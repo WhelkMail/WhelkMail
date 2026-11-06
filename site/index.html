@@ -170,8 +170,8 @@
                   <circle cx="18" cy="17" r="2" />
                 </svg>
               </div>
-              <h3>Sync that resumes</h3>
-              <p>Incremental, chunked IMAP metadata sync into D1. Start it manually or let the cron worker keep accounts fresh every five minutes.</p>
+              <h3>Fast, automatic sync</h3>
+              <p>Folder lists open from a local D1 mirror while a resumable background sync keeps metadata and read state current. The optional cron worker extends this to background notifications.</p>
             </article>
 
             <article class="card">
@@ -181,8 +181,30 @@
                   <path d="M4 8h16M8 12h6" />
                 </svg>
               </div>
-              <h3>Optional archive</h3>
-              <p>Keep bodies and attachments on your provider by default, or archive them to Cloudflare R2 or Google Drive when you want an independent copy.</p>
+              <h3>Fast opens, optional archive</h3>
+              <p>Recent bodies are cached briefly so opening a message does not wait for IMAP. Keep bodies on your provider or archive them to Cloudflare R2 or Google Drive.</p>
+            </article>
+
+            <article class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="m8 9 2 2-2 2M13 13h3" />
+                </svg>
+              </div>
+              <h3>HTML on your terms</h3>
+              <p>HTML email is rendered in a sandboxed frame with scripts disabled. Remote images and tracking pixels stay blocked until you enable them for a message.</p>
+            </article>
+
+            <article class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" />
+                  <path d="M10 11v6M14 11v6" />
+                </svg>
+              </div>
+              <h3>Inbox actions</h3>
+              <p>Select one or many messages to delete, move between Inbox, Spam and Trash, or mark as spam. A dedicated Spam folder is included.</p>
             </article>
 
             <article class="card">
@@ -215,12 +237,14 @@
             <p class="eyebrow">Privacy by default</p>
             <h2>Your mail stays yours.</h2>
             <p class="section-lede">
-              WhelkMail reads from your provider and renders HTML as text. Remote images
-              and tracking pixels are never loaded. The optional archive is the only time
-              message bodies leave the provider.
+              WhelkMail reads from your provider. HTML is rendered in a sandboxed frame
+              with scripts and forms disabled; remote images and tracking pixels stay
+              blocked until you enable them for a message. A short-lived D1 cache keeps
+              recent bodies for fast opens, and long-term archiving remains opt-in.
             </p>
             <ul class="checklist">
-              <li>HTML email displayed as clean text, no remote content</li>
+              <li>Sandboxed HTML with scripts blocked and remote images opt-in</li>
+              <li>Short-lived body cache with automatic cleanup</li>
               <li>Credentials encrypted at rest with AES-256-GCM</li>
               <li>Optional TOTP two-factor authentication</li>
               <li>Server-side sessions, revocable on logout</li>
@@ -268,8 +292,8 @@
             </div>
             <div class="step">
               <span class="step-number">03</span>
-              <h3>Optional: background sync</h3>
-              <p>Deploy the cron worker for automatic sync, new-mail notifications, forwarding and provider cleanup.</p>
+              <h3>Optional: background worker</h3>
+              <p>Folder opens already sync automatically. Deploy the cron worker for periodic sync, new-mail notifications, forwarding and provider cleanup.</p>
             </div>
           </div>
 

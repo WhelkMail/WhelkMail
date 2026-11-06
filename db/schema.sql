@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   access_token_expires_at INTEGER,
   oauth_provider TEXT,
   sent_folder TEXT NOT NULL DEFAULT 'Sent',
+  drafts_folder TEXT,
+  spam_folder TEXT,
   auto_saves_sent INTEGER NOT NULL DEFAULT 0,
   max_attachment_bytes INTEGER NOT NULL DEFAULT 15728640,
   storage_driver TEXT NOT NULL DEFAULT 'provider',
@@ -34,7 +36,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   archive_imap_bodies INTEGER NOT NULL DEFAULT 0,
   imap_archive_driver TEXT NOT NULL DEFAULT 'r2',
   delete_after_archive INTEGER NOT NULL DEFAULT 0,
-  auto_sync INTEGER NOT NULL DEFAULT 0,
+  auto_sync INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL
 );
 
@@ -164,6 +166,18 @@ CREATE TABLE IF NOT EXISTS imap_messages (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_imap_messages_uid ON imap_messages (account_id, folder, uid);
 CREATE INDEX IF NOT EXISTS idx_imap_messages_list ON imap_messages (account_id, folder, sent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_imap_messages_stable ON imap_messages (account_id, stable_key);
+
+CREATE TABLE IF NOT EXISTS imap_body_cache (
+  message_id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  folder TEXT NOT NULL,
+  uid INTEGER NOT NULL,
+  body BLOB NOT NULL,
+  size INTEGER NOT NULL,
+  cached_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_imap_body_cache_cached ON imap_body_cache (cached_at);
 
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id TEXT PRIMARY KEY,

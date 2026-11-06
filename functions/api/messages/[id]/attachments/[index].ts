@@ -20,12 +20,17 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
   const filename = attachment.filename || `allegato-${index + 1}`
   const safe = filename.replace(/[\r\n"]/g, ' ').trim()
-  const disposition = `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+  const contentType = attachment.mimeType || 'application/octet-stream'
+  const inline =
+    new URL(context.request.url).searchParams.get('inline') === '1' &&
+    contentType.toLowerCase().startsWith('image/')
+  const disposition = `${inline ? 'inline' : 'attachment'}; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(filename)}`
   return new Response(attachment.content, {
     headers: {
-      'Content-Type': attachment.mimeType || 'application/octet-stream',
+      'Content-Type': contentType,
       'Content-Disposition': disposition,
-      'Cache-Control': 'no-store',
+      'Cache-Control': inline ? 'private, max-age=300' : 'no-store',
+      'X-Content-Type-Options': 'nosniff',
     },
   })
 }

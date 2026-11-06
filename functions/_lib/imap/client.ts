@@ -33,13 +33,24 @@ const decoder = new TextDecoder()
 
 export class ImapError extends Error {}
 
+class ImapTimeoutError extends ImapError {}
+
+const COMMAND_TIMEOUT_MS = 20_000
+
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new ImapError(message)), ms)
-    }),
-  ])
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new ImapTimeoutError(message)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
 }
 
 function quote(value: string): string {
@@ -76,7 +87,13 @@ export class ImapConnection {
     const connection = new ImapConnection(socket)
     await withTimeout(socket.opened, timeoutMs, 'Connessione IMAP scaduta')
     connection.attach()
-    const greeting = await connection.readLine()
+    let greeting: string
+    try {
+      greeting = await withTimeout(connection.readLine(), timeoutMs, 'Saluto IMAP scaduto')
+    } catch (error) {
+      connection.close()
+      throw error
+    }
     if (!greeting.toUpperCase().startsWith('* OK')) {
       connection.close()
       throw new ImapError(`Saluto IMAP inatteso: ${greeting}`)
@@ -154,6 +171,24 @@ export class ImapConnection {
     command: string,
     onContinuation?: () => Promise<void>,
   ): Promise<{ parts: ImapPart[]; status: string; ok: boolean }> {
+    try {
+      return await withTimeout(
+        this.executeCommand(command, onContinuation),
+        COMMAND_TIMEOUT_MS,
+        `Operazione IMAP scaduta: ${command.split(' ')[0]}`,
+      )
+    } catch (error) {
+      if (error instanceof ImapTimeoutError) {
+        this.close()
+      }
+      throw error
+    }
+  }
+
+  private async executeCommand(
+    command: string,
+    onContinuation?: () => Promise<void>,
+  ): Promise<{ parts: ImapPart[]; status: string; ok: boolean }> {
     const tag = `A${++this.tagCounter}`
     await this.writeLine(`${tag} ${command}`)
     const parts: ImapPart[] = []
@@ -226,26 +261,36 @@ export class ImapConnection {
 
   async selectWithDetails(folder: string): Promise<{
     uidValidity: number | null
+    uidNext: number | null
     exists: number | null
   }> {
     const { parts } = await this.command(`SELECT ${quote(folder)}`)
     let uidValidity: number | null = null
+    let uidNext: number | null = null
     let exists: number | null = null
     for (const part of parts) {
       const validity = part.line.match(/\[UIDVALIDITY (\d+)\]/i)
       if (validity) {
         uidValidity = Number(validity[1])
       }
+      const next = part.line.match(/\[UIDNEXT (\d+)\]/i)
+      if (next) {
+        uidNext = Number(next[1])
+      }
       const count = part.line.match(/^\* (\d+) EXISTS/)
       if (count) {
         exists = Number(count[1])
       }
     }
-    return { uidValidity, exists }
+    return { uidValidity, uidNext, exists }
   }
 
   async searchAll(): Promise<number[]> {
-    const { parts } = await this.command('UID SEARCH ALL')
+    return this.searchUids('1:*')
+  }
+
+  async searchUids(range: string): Promise<number[]> {
+    const { parts } = await this.command(`UID SEARCH UID ${range}`)
     const line = parts.map((part) => part.line).find((item) => item.startsWith('* SEARCH'))
     if (!line) {
       return []
@@ -257,6 +302,59 @@ export class ImapConnection {
       .filter(Boolean)
       .map(Number)
       .filter((value) => Number.isFinite(value))
+  }
+
+  async searchRecentUids(limit: number, uidNext: number | null): Promise<number[]> {
+    if (uidNext !== null && uidNext > 1) {
+      const window = Math.max(limit * 4, 100)
+      const start = Math.max(1, uidNext - window)
+      const uids = await this.searchUids(`${start}:*`)
+      return uids.slice(-limit)
+    }
+    return (await this.searchAll()).slice(-limit)
+  }
+
+  async firstUid(): Promise<number | null> {
+    const { parts } = await this.command('UID FETCH 1 (UID)')
+    for (const part of parts) {
+      const match = part.line.match(/\bUID (\d+)/)
+      if (match) {
+        return Number(match[1])
+      }
+    }
+    return null
+  }
+
+  async fetchUidsBySequence(start: number, end: number): Promise<number[]> {
+    const { parts } = await this.command(`UID FETCH ${start}:${end} (UID)`)
+    const uids: number[] = []
+    for (const part of parts) {
+      const match = part.line.match(/\bUID (\d+)/)
+      if (match) {
+        uids.push(Number(match[1]))
+      }
+    }
+    return uids
+  }
+
+  async fetchFlags(uids: number[]): Promise<{ uid: number; flags: string[] }[]> {
+    if (uids.length === 0) {
+      return []
+    }
+    const { parts } = await this.command(`UID FETCH ${uids.join(',')} (UID FLAGS)`)
+    const result: { uid: number; flags: string[] }[] = []
+    for (const part of parts) {
+      const uidMatch = part.line.match(/\bUID (\d+)/)
+      if (!uidMatch) {
+        continue
+      }
+      const flagsMatch = part.line.match(/\bFLAGS \(([^)]*)\)/)
+      result.push({
+        uid: Number(uidMatch[1]),
+        flags: flagsMatch ? flagsMatch[1].split(/\s+/).filter(Boolean) : [],
+      })
+    }
+    return result
   }
 
   async fetchHeaders(uids: number[]): Promise<ImapHeader[]> {
@@ -288,8 +386,8 @@ export class ImapConnection {
     return headers
   }
 
-  async fetchFull(uid: number): Promise<Uint8Array> {
-    const { parts } = await this.command(`UID FETCH ${uid} (BODY.PEEK[])`)
+  async fetchFull(uid: number, markSeen = false): Promise<Uint8Array> {
+    const { parts } = await this.command(`UID FETCH ${uid} (BODY${markSeen ? '' : '.PEEK'}[])`)
     const part = parts.find((item) => item.literal)
     if (!part?.literal) {
       throw new ImapError(`Messaggio ${uid} non trovato`)
@@ -297,21 +395,56 @@ export class ImapConnection {
     return part.literal
   }
 
+  async fetchFullMany(uids: number[]): Promise<Map<number, Uint8Array>> {
+    const result = new Map<number, Uint8Array>()
+    if (uids.length === 0) {
+      return result
+    }
+    const { parts } = await this.command(
+      `UID FETCH ${uids.join(',')} (UID BODY.PEEK[])`,
+    )
+    for (const part of parts) {
+      if (!part.literal) {
+        continue
+      }
+      const match = part.line.match(/\bUID (\d+)/)
+      if (match) {
+        result.set(Number(match[1]), part.literal)
+      }
+    }
+    return result
+  }
+
   async markSeen(uid: number): Promise<void> {
     await this.command(`UID STORE ${uid} +FLAGS (\\Seen)`)
   }
 
   async deleteMessage(uid: number): Promise<void> {
-    await this.command(`UID STORE ${uid} +FLAGS (\\Deleted)`)
+    await this.deleteMany([uid])
+  }
+
+  async deleteMany(uids: number[]): Promise<void> {
+    if (uids.length === 0) {
+      return
+    }
+    const set = uids.join(',')
+    await this.command(`UID STORE ${set} +FLAGS (\\Deleted)`)
     try {
-      await this.command(`UID EXPUNGE ${uid}`)
+      await this.command(`UID EXPUNGE ${set}`)
     } catch {
       await this.command('EXPUNGE')
     }
   }
 
   async copy(uid: number, folder: string): Promise<void> {
-    await this.command(`UID COPY ${uid} ${quote(folder)}`)
+    await this.copyMany([uid], folder)
+  }
+
+  async copyMany(uids: number[], folder: string): Promise<void> {
+    if (uids.length === 0) {
+      return
+    }
+    await this.command(`UID COPY ${uids.join(',')} ${quote(folder)}`)
   }
 
   async create(folder: string): Promise<void> {
@@ -322,6 +455,25 @@ export class ImapConnection {
     folder: string,
     message: Uint8Array,
     flags = '(\\Seen)',
+  ): Promise<{ uid: number | null }> {
+    try {
+      return await withTimeout(
+        this.executeAppend(folder, message, flags),
+        COMMAND_TIMEOUT_MS,
+        'APPEND IMAP scaduto',
+      )
+    } catch (error) {
+      if (error instanceof ImapTimeoutError) {
+        this.close()
+      }
+      throw error
+    }
+  }
+
+  private async executeAppend(
+    folder: string,
+    message: Uint8Array,
+    flags: string,
   ): Promise<{ uid: number | null }> {
     const tag = `A${++this.tagCounter}`
     await this.writeLine(`${tag} APPEND ${quote(folder)} ${flags} {${message.length}}`)

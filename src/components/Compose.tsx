@@ -360,7 +360,14 @@ export function Compose({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center sm:p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center sm:p-6"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          void handleClose()
+        }
+      }}
+    >
       <form
         onSubmit={submit}
         className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl"

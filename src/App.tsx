@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, CloudOff } from 'lucide-react'
+import { AlertCircle, CloudOff, Pencil } from 'lucide-react'
 import type {
   Account,
   AccountCreateInput,
@@ -58,6 +58,9 @@ export default function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [messages, setMessages] = useState<MessageSummary[]>([])
   const [listErrors, setListErrors] = useState<AccountError[]>([])
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [hiddenIds, setHiddenIds] = useState<string[]>([])
+  const [actionBusy, setActionBusy] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
   const [detail, setDetail] = useState<MessageDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -99,7 +102,9 @@ export default function App() {
   const [composeSeed, setComposeSeed] = useState<ComposeSeed | null>(null)
   const [composeKey, setComposeKey] = useState(0)
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [syncingMessages, setSyncingMessages] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const syncRefreshCount = useRef(0)
   const [onboardingBusy, setOnboardingBusy] = useState(false)
   const [onboardingError, setOnboardingError] = useState<string | null>(null)
   const [settingsBusyId, setSettingsBusyId] = useState<string | null>(null)
@@ -199,6 +204,10 @@ export default function App() {
   }, [t])
 
   useEffect(() => {
+    syncRefreshCount.current = 0
+  }, [selectedAccountId, folder, selectedLabelId])
+
+  useEffect(() => {
     if (auth !== 'ok') {
       return
     }
@@ -212,6 +221,13 @@ export default function App() {
         }
         setMessages(response.messages)
         setListErrors(response.errors)
+        setSyncingMessages(Boolean(response.syncing))
+        setSelectedIds((current) =>
+          current.filter((id) => response.messages.some((item) => item.id === id)),
+        )
+        setHiddenIds((current) =>
+          current.filter((id) => response.messages.some((item) => item.id === id)),
+        )
         setSelectedMessageId((current) =>
           current && response.messages.some((item) => item.id === current) ? current : null,
         )
@@ -220,6 +236,7 @@ export default function App() {
         if (cancelled) {
           return
         }
+        setSyncingMessages(false)
         if (error instanceof ApiError && error.isUnauthorized) {
           setAuth('needed')
           return
@@ -235,6 +252,21 @@ export default function App() {
       cancelled = true
     }
   }, [auth, selectedAccountId, folder, selectedLabelId, refreshKey])
+
+  useEffect(() => {
+    if (!syncingMessages) {
+      syncRefreshCount.current = 0
+      return
+    }
+    if (syncRefreshCount.current >= 3) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      syncRefreshCount.current += 1
+      setRefreshKey((key) => key + 1)
+    }, 4000)
+    return () => window.clearTimeout(timer)
+  }, [syncingMessages])
 
   useEffect(() => {
     if (!notice) {
@@ -306,6 +338,9 @@ export default function App() {
   const visibleMessages = useMemo(() => {
     const needle = query.trim().toLowerCase()
     let result = messages
+    if (hiddenIds.length > 0) {
+      result = result.filter((message) => !hiddenIds.includes(message.id))
+    }
     if (needle) {
       result = result.filter((message) => {
         const haystack = [
@@ -325,7 +360,7 @@ export default function App() {
       result = result.filter((message) => message.labelIds.includes(selectedLabelId))
     }
     return result
-  }, [messages, query, selectedLabelId])
+  }, [messages, query, selectedLabelId, hiddenIds])
 
   function openCompose(draft: DraftPayload | null, seed: ComposeSeed | null = null) {
     setComposeDraft(draft)
@@ -403,6 +438,54 @@ export default function App() {
     }
     setSelectedMessageId(id)
     setMessages((current) => current.map((item) => (item.id === id ? { ...item, unread: false } : item)))
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    )
+  }
+
+  function toggleSelectAll(ids: string[]) {
+    setSelectedIds((current) =>
+      ids.length > 0 && ids.every((id) => current.includes(id)) ? [] : ids,
+    )
+  }
+
+  async function runMessageAction(
+    ids: string[],
+    action: 'delete' | 'spam' | 'move',
+    target?: 'inbox' | 'spam' | 'trash',
+  ): Promise<void> {
+    if (ids.length === 0 || actionBusy) {
+      return
+    }
+    setActionBusy(true)
+    try {
+      const result = await api.messageAction(ids, action, target)
+      if (result.errors.length > 0) {
+        setNotice(result.errors.map((item) => item.message).join('; '))
+      }
+      const failed = new Set(result.errors.flatMap((item) => item.ids))
+      const skipped = new Set(result.skipped)
+      const succeeded = ids.filter((id) => !failed.has(id) && !skipped.has(id))
+      const deletesMessage = action === 'delete' || (action === 'move' && target === 'trash')
+      if (deletesMessage) {
+        setMessages((current) => current.filter((item) => !succeeded.includes(item.id)))
+      } else if (succeeded.length > 0) {
+        setHiddenIds((current) => [...new Set([...current, ...succeeded])])
+      }
+      if (selectedMessageId && succeeded.includes(selectedMessageId)) {
+        setSelectedMessageId(null)
+        setDetail(null)
+      }
+      setSelectedIds([])
+      setRefreshKey((key) => key + 1)
+    } catch (error) {
+      setNotice(errorText(error, tRef.current))
+    } finally {
+      setActionBusy(false)
+    }
   }
 
   async function createAccount(input: AccountCreateInput): Promise<Account | null> {
@@ -671,6 +754,8 @@ export default function App() {
       setMessages([])
       setDetail(null)
       setSelectedMessageId(null)
+      setSelectedIds([])
+      setHiddenIds([])
       setAuth('needed')
     }
   }
@@ -681,6 +766,8 @@ export default function App() {
     setView('mail')
     setSelectedMessageId(null)
     setDetail(null)
+    setSelectedIds([])
+    setHiddenIds([])
     setQuery('')
   }
 
@@ -689,6 +776,8 @@ export default function App() {
     setView('mail')
     setSelectedMessageId(null)
     setDetail(null)
+    setSelectedIds([])
+    setHiddenIds([])
     setQuery('')
   }
 
@@ -808,8 +897,13 @@ export default function App() {
             setSelectedLabelId(null)
             setSelectedMessageId(null)
             setDetail(null)
+            setSelectedIds([])
+            setHiddenIds([])
           }}
-          onQuery={setQuery}
+          onQuery={(value) => {
+            setQuery(value)
+            setSelectedIds([])
+          }}
           onOpenSettings={() => setView('settings')}
           onLogout={() => void logout()}
           onMenu={() => setMobileSidebarOpen(true)}
@@ -893,7 +987,7 @@ export default function App() {
             onDelete={(id) => void deleteContact(id)}
           />
         ) : (
-          <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="mx-auto flex min-h-0 w-full max-w-[1800px] flex-1 overflow-hidden px-0 pb-0 sm:px-4 sm:pb-2 lg:px-6 lg:pb-3">
             {readingPane ? (
               <>
                 <MailList
@@ -901,9 +995,17 @@ export default function App() {
                   labels={labels}
                   selectedId={selectedMessageId}
                   loading={loadingMessages}
+                  syncing={syncingMessages}
                   folder={folder}
                   labelName={selectedLabel?.name ?? null}
                   className={selectedMessageId ? 'hidden md:flex' : ''}
+                  selectedIds={selectedIds}
+                  actionBusy={actionBusy}
+                  onToggleSelect={toggleSelect}
+                  onToggleSelectAll={toggleSelectAll}
+                  onAction={(action, target) =>
+                    void runMessageAction(selectedIds, action, target)
+                  }
                   onSelect={(id) => void selectMessage(id)}
                 />
                 <ReadingPane
@@ -929,6 +1031,22 @@ export default function App() {
                       void setMessageLabels(detail.id, ids)
                     }
                   }}
+                  actionBusy={actionBusy}
+                  onDelete={() => {
+                    if (detail) {
+                      void runMessageAction([detail.id], 'delete')
+                    }
+                  }}
+                  onToggleSpam={() => {
+                    if (!detail) {
+                      return
+                    }
+                    void runMessageAction(
+                      [detail.id],
+                      detail.folder === 'spam' ? 'move' : 'spam',
+                      detail.folder === 'spam' ? 'inbox' : undefined,
+                    )
+                  }}
                 />
               </>
             ) : selectedMessageId ? (
@@ -953,6 +1071,22 @@ export default function App() {
                     void setMessageLabels(detail.id, ids)
                   }
                 }}
+                actionBusy={actionBusy}
+                onDelete={() => {
+                  if (detail) {
+                    void runMessageAction([detail.id], 'delete')
+                  }
+                }}
+                onToggleSpam={() => {
+                  if (!detail) {
+                    return
+                  }
+                  void runMessageAction(
+                    [detail.id],
+                    detail.folder === 'spam' ? 'move' : 'spam',
+                    detail.folder === 'spam' ? 'inbox' : undefined,
+                  )
+                }}
               />
             ) : (
               <MailList
@@ -960,15 +1094,35 @@ export default function App() {
                 labels={labels}
                 selectedId={selectedMessageId}
                 loading={loadingMessages}
+                syncing={syncingMessages}
                 folder={folder}
                 labelName={selectedLabel?.name ?? null}
                 fullWidth
+                selectedIds={selectedIds}
+                actionBusy={actionBusy}
+                onToggleSelect={toggleSelect}
+                onToggleSelectAll={toggleSelectAll}
+                onAction={(action, target) =>
+                  void runMessageAction(selectedIds, action, target)
+                }
                 onSelect={(id) => void selectMessage(id)}
               />
             )}
           </div>
         )}
       </div>
+
+      {view === 'mail' && !composeOpen && !selectedMessageId ? (
+        <button
+          type="button"
+          onClick={() => openCompose(null)}
+          aria-label={t('sidebar.compose')}
+          title={t('sidebar.compose')}
+          className="fixed bottom-6 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-xl transition hover:bg-brand-strong md:hidden"
+        >
+          <Pencil size={24} />
+        </button>
+      ) : null}
 
       {composeOpen ? (
         <Compose

@@ -9,6 +9,7 @@ import {
   Send,
   Server,
   Settings,
+  ShieldAlert,
   Tag,
   Users,
   X,
@@ -157,6 +158,19 @@ export function Sidebar({
           >
             <FileText size={18} />
             {t('sidebar.drafts')}
+          </button>
+          <button
+            type="button"
+            onClick={() => openFolder('spam')}
+            className={cn(
+              'flex items-center gap-3 rounded-full px-4 py-2 text-sm',
+              view === 'mail' && folder === 'spam' && !selectedLabelId
+                ? 'bg-brand-soft font-medium text-brand-strong'
+                : 'text-slate-700 hover:bg-slate-200/60',
+            )}
+          >
+            <ShieldAlert size={18} />
+            {t('sidebar.spam')}
           </button>
           <button
             type="button"

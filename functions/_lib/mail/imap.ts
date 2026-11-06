@@ -60,28 +60,95 @@ async function resolveSpecialFolder(
   return fallback
 }
 
+async function persistFolder(
+  env: Env,
+  account: AccountRow,
+  field: 'sent_folder' | 'drafts_folder' | 'spam_folder',
+  value: string,
+): Promise<void> {
+  const current =
+    field === 'sent_folder'
+      ? account.sent_folder
+      : field === 'drafts_folder'
+        ? account.drafts_folder
+        : account.spam_folder
+  if (current === value) {
+    return
+  }
+  try {
+    await env.DB.prepare(`UPDATE accounts SET ${field} = ? WHERE id = ?`)
+      .bind(value, account.id)
+      .run()
+    if (field === 'sent_folder') {
+      account.sent_folder = value
+    } else if (field === 'drafts_folder') {
+      account.drafts_folder = value
+    } else {
+      account.spam_folder = value
+    }
+  } catch {
+    // Folder resolution must keep working even if the schema is outdated.
+  }
+}
+
 export async function resolveSentFolder(
   connection: ImapConnection,
   account: AccountRow,
+  env?: Env,
 ): Promise<string> {
   if (account.sent_folder && account.sent_folder !== 'Sent') {
     return account.sent_folder
   }
-  return resolveSpecialFolder(
+  const resolved = await resolveSpecialFolder(
     connection,
     '\\Sent',
     account.sent_folder || 'Sent',
     /(^|[./])(sent|sent items|sent mail|sent messages|inviati|inviate|invio|posta inviata|inviata)$/i,
   )
+  if (env) {
+    await persistFolder(env, account, 'sent_folder', resolved)
+  }
+  return resolved
 }
 
-export async function resolveDraftsFolder(connection: ImapConnection): Promise<string> {
-  return resolveSpecialFolder(
+export async function resolveDraftsFolder(
+  connection: ImapConnection,
+  account?: AccountRow,
+  env?: Env,
+): Promise<string> {
+  if (account?.drafts_folder) {
+    return account.drafts_folder
+  }
+  const resolved = await resolveSpecialFolder(
     connection,
     '\\Drafts',
-    'Drafts',
+    account?.drafts_folder || 'Drafts',
     /(^|[./])(draft|drafts|draft messages|bozza|bozze)$/i,
   )
+  if (env && account) {
+    await persistFolder(env, account, 'drafts_folder', resolved)
+  }
+  return resolved
+}
+
+export async function resolveSpamFolder(
+  connection: ImapConnection,
+  account?: AccountRow,
+  env?: Env,
+): Promise<string> {
+  if (account?.spam_folder) {
+    return account.spam_folder
+  }
+  const resolved = await resolveSpecialFolder(
+    connection,
+    '\\Junk',
+    account?.spam_folder || 'Spam',
+    /(^|[./])(spam|junk|junk e-?mail|bulk mail|posta indesiderata|indesiderata|spazzatura)$/i,
+  )
+  if (env && account) {
+    await persistFolder(env, account, 'spam_folder', resolved)
+  }
+  return resolved
 }
 
 export async function resolveTrashFolder(connection: ImapConnection): Promise<string> {
@@ -93,7 +160,7 @@ export async function resolveTrashFolder(connection: ImapConnection): Promise<st
   )
 }
 
-const MISSING_FOLDER = /TRYCREATE|NONEXISTENT|doesn't exist|does not exist|Mailbox doesn't exist/i
+export const MISSING_FOLDER = /TRYCREATE|NONEXISTENT|doesn't exist|does not exist|Mailbox doesn't exist/i
 
 function uniqueFolders(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))]
@@ -190,6 +257,7 @@ async function appendWithCreate(
 }
 
 async function targetFolder(
+  env: Env,
   connection: ImapConnection,
   account: AccountRow,
   folder: Folder,
@@ -198,27 +266,30 @@ async function targetFolder(
     return 'INBOX'
   }
   if (folder === 'sent') {
-    return resolveSentFolder(connection, account)
+    return resolveSentFolder(connection, account, env)
   }
-  return resolveDraftsFolder(connection)
+  if (folder === 'spam') {
+    return resolveSpamFolder(connection, account, env)
+  }
+  return resolveDraftsFolder(connection, account, env)
 }
 
 export async function resolveFolderName(
+  env: Env,
   connection: ImapConnection,
   account: AccountRow,
   folder: Folder,
 ): Promise<string> {
-  return targetFolder(connection, account, folder)
+  return targetFolder(env, connection, account, folder)
 }
 
 async function selectForRead(
   connection: ImapConnection,
   folder: string,
   allowCreate: boolean,
-): Promise<boolean> {
+): Promise<{ uidNext: number | null; exists: number | null } | null> {
   try {
-    await connection.select(folder)
-    return true
+    return await connection.selectWithDetails(folder)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     if (!MISSING_FOLDER.test(detail)) {
@@ -233,10 +304,9 @@ async function selectForRead(
       // ignore; try selecting again in case it already exists
     }
     try {
-      await connection.select(folder)
-      return true
+      return await connection.selectWithDetails(folder)
     } catch {
-      return false
+      return null
     }
   }
 }
@@ -248,13 +318,16 @@ export async function listFolder(
   limit = 30,
 ): Promise<ImapHeader[]> {
   return withImap(env, account, async (connection) => {
-    const target = await targetFolder(connection, account, folder)
+    const target = await targetFolder(env, connection, account, folder)
     const selected = await selectForRead(connection, target, folder !== 'inbox')
     if (!selected) {
       return []
     }
-    const uids = await connection.searchAll()
-    return connection.fetchHeaders(uids.slice(-limit))
+    let uids = await connection.searchRecentUids(limit, selected.uidNext)
+    if (uids.length === 0 && (selected.exists ?? 1) > 0) {
+      uids = (await connection.searchAll()).slice(-limit)
+    }
+    return connection.fetchHeaders(uids)
   })
 }
 
@@ -268,7 +341,7 @@ export async function listFolderByUids(
     return []
   }
   return withImap(env, account, async (connection) => {
-    const target = await targetFolder(connection, account, folder)
+    const target = await targetFolder(env, connection, account, folder)
     const selected = await selectForRead(connection, target, false)
     if (!selected) {
       return []
@@ -285,17 +358,9 @@ export async function fetchMessage(
   markRead = false,
 ): Promise<Uint8Array> {
   return withImap(env, account, async (connection) => {
-    const target = await targetFolder(connection, account, folder)
+    const target = await targetFolder(env, connection, account, folder)
     await connection.select(target)
-    const bytes = await connection.fetchFull(uid)
-    if (markRead && folder === 'inbox') {
-      try {
-        await connection.markSeen(uid)
-      } catch {
-        // non-blocking
-      }
-    }
-    return bytes
+    return connection.fetchFull(uid, markRead && (folder === 'inbox' || folder === 'spam'))
   })
 }
 
@@ -306,7 +371,7 @@ export async function markMessageSeen(
   uid: number,
 ): Promise<void> {
   await withImap(env, account, async (connection) => {
-    const target = await targetFolder(connection, account, folder)
+    const target = await targetFolder(env, connection, account, folder)
     await connection.select(target)
     await connection.markSeen(uid)
   })
@@ -318,7 +383,7 @@ export async function appendToSent(
   message: Uint8Array,
 ): Promise<{ folder: string }> {
   return withImap(env, account, async (connection) => {
-    const folder = await resolveSentFolder(connection, account)
+    const folder = await resolveSentFolder(connection, account, env)
     const result = await appendWithCreate(connection, folder, message, '(\\Seen)', 'sent')
     return { folder: result.folder }
   })
@@ -330,12 +395,15 @@ export async function saveDraft(
   message: Uint8Array,
 ): Promise<{ uid: number }> {
   return withImap(env, account, async (connection) => {
-    const folder = await resolveDraftsFolder(connection)
+    const folder = await resolveDraftsFolder(connection, account, env)
     const result = await appendWithCreate(connection, folder, message, '(\\Draft \\Seen)', 'draft')
     if (result.uid) {
       return { uid: result.uid }
     }
-    await connection.select(result.folder)
+    const details = await connection.selectWithDetails(result.folder)
+    if (details.uidNext && details.uidNext > 1) {
+      return { uid: details.uidNext - 1 }
+    }
     const uids = await connection.searchAll()
     if (uids.length === 0) {
       throw new Error('Bozza non trovata dopo APPEND')
@@ -350,9 +418,52 @@ export async function deleteDraft(
   uid: number,
 ): Promise<void> {
   await withImap(env, account, async (connection) => {
-    const folder = await resolveDraftsFolder(connection)
+    const folder = await resolveDraftsFolder(connection, account, env)
     await connection.select(folder)
     await connection.deleteMessage(uid)
+  })
+}
+
+export type MoveTarget = 'inbox' | 'spam' | 'trash'
+
+export async function moveMessages(
+  env: Env,
+  account: AccountRow,
+  folder: Folder,
+  uids: number[],
+  target: MoveTarget,
+): Promise<string> {
+  if (uids.length === 0) {
+    return ''
+  }
+  return withImap(env, account, async (connection) => {
+    const source = await targetFolder(env, connection, account, folder)
+    await connection.select(source)
+    const destination =
+      target === 'inbox'
+        ? 'INBOX'
+        : target === 'spam'
+          ? await resolveSpamFolder(connection, account, env)
+          : await resolveTrashFolder(connection)
+    if (destination === source) {
+      throw new Error('La cartella di destinazione coincide con quella di origine')
+    }
+    try {
+      await connection.copyMany(uids, destination)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      if (!MISSING_FOLDER.test(detail)) {
+        throw error
+      }
+      try {
+        await connection.create(destination)
+      } catch {
+        // It may already exist.
+      }
+      await connection.copyMany(uids, destination)
+    }
+    await connection.deleteMany(uids)
+    return destination
   })
 }
 
@@ -362,28 +473,5 @@ export async function moveToTrash(
   folder: Folder,
   uid: number,
 ): Promise<string> {
-  return withImap(env, account, async (connection) => {
-    const source = await targetFolder(connection, account, folder)
-    await connection.select(source)
-    const trash = await resolveTrashFolder(connection)
-    if (trash === source) {
-      throw new Error('La cartella Trash coincide con la cartella di origine')
-    }
-    try {
-      await connection.copy(uid, trash)
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      if (!MISSING_FOLDER.test(detail)) {
-        throw error
-      }
-      try {
-        await connection.create(trash)
-      } catch {
-        // It may already exist.
-      }
-      await connection.copy(uid, trash)
-    }
-    await connection.deleteMessage(uid)
-    return trash
-  })
+  return moveMessages(env, account, folder, [uid], 'trash')
 }

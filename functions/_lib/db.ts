@@ -27,6 +27,8 @@ export interface AccountRow {
   access_token_expires_at: number | null
   oauth_provider: string | null
   sent_folder: string
+  drafts_folder: string | null
+  spam_folder: string | null
   auto_saves_sent: number
   max_attachment_bytes: number
   storage_driver: string

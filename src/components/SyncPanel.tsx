@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react'
 import type { Account, AccountPatch, Folder, MailboxSyncState } from '../../shared/types'
 import { useI18n } from '../i18n'
@@ -12,10 +12,16 @@ interface SyncPanelProps {
   onUpdate: (id: string, patch: AccountPatch) => Promise<void>
 }
 
-const FOLDERS: Folder[] = ['inbox', 'sent', 'draft']
+const FOLDERS: Folder[] = ['inbox', 'sent', 'draft', 'spam']
 
 function folderLabel(folder: Folder, t: (key: string) => string): string {
-  return folder === 'inbox' ? t('list.inbox') : folder === 'sent' ? t('list.sent') : t('list.drafts')
+  return folder === 'inbox'
+    ? t('list.inbox')
+    : folder === 'sent'
+      ? t('list.sent')
+      : folder === 'spam'
+        ? t('list.spam')
+        : t('list.drafts')
 }
 
 export function SyncPanel({ account, onSynced, onUpdate }: SyncPanelProps) {
@@ -25,7 +31,6 @@ export function SyncPanel({ account, onSynced, onUpdate }: SyncPanelProps) {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const autoResumed = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -81,19 +86,6 @@ export function SyncPanel({ account, onSynced, onUpdate }: SyncPanelProps) {
       onSynced()
     }
   }
-
-  useEffect(() => {
-    if (loading || autoResumed.current) {
-      return
-    }
-    if (states.some((state) => state.status === 'partial')) {
-      autoResumed.current = true
-      const timer = window.setTimeout(() => {
-        void runSync()
-      }, 0)
-      return () => window.clearTimeout(timer)
-    }
-  })
 
   if (loading) {
     return <p className="mt-4 text-xs text-muted">{t('common.loading')}</p>

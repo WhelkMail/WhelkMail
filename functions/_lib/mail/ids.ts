@@ -31,7 +31,7 @@ export function parseImapMessageId(
   } catch {
     return null
   }
-  if (folder !== 'inbox' && folder !== 'sent' && folder !== 'draft') {
+  if (folder !== 'inbox' && folder !== 'sent' && folder !== 'draft' && folder !== 'spam') {
     return null
   }
   return { accountId, folder, uid }

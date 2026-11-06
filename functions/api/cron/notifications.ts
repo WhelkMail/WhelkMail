@@ -2,6 +2,7 @@ import type { Folder } from '../../../shared/types'
 import { listAccountRows } from '../../_lib/db'
 import { deleteArchivedMessage } from '../../_lib/deletion'
 import type { Env } from '../../_lib/env'
+import { cleanupBodyCache } from '../../_lib/body-cache'
 import { applyAccountLabel, applyFilters } from '../../_lib/filters'
 import { forwardFilteredMessage } from '../../_lib/forward'
 import { fail, json } from '../../_lib/http'
@@ -80,6 +81,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       folders.add('inbox')
       folders.add('sent')
       folders.add('draft')
+      folders.add('spam')
     }
     if (folders.size === 0) {
       continue
@@ -198,6 +200,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
   }
+
+  await cleanupBodyCache(context.env).catch(() => undefined)
 
   if (gone.size > 0) {
     await context.env.DB.batch(

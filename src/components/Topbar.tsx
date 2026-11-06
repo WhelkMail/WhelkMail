@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, LogOut, Menu, Search, Settings } from 'lucide-react'
+import { Check, LogOut, Menu, Search, Settings, UserRound } from 'lucide-react'
 import type { Account } from '../../shared/types'
 import { useI18n } from '../i18n'
-import { cn, initials } from '../lib/utils'
+import { cn } from '../lib/utils'
 
 interface TopbarProps {
   accounts: Account[]
@@ -26,7 +26,6 @@ export function Topbar({
   onMenu,
 }: TopbarProps) {
   const { t } = useI18n()
-  const account = accounts.find((item) => item.id === selectedAccountId) ?? null
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -99,7 +98,7 @@ export function Topbar({
             aria-expanded={menuOpen}
             className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white hover:bg-brand-strong"
           >
-            {initials(account?.displayName ?? account?.email ?? t('sidebar.all'))}
+            <UserRound size={18} />
           </button>
 
           {menuOpen ? (

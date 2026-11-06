@@ -70,8 +70,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? await encryptString(context.env, input.password)
       : null
     await context.env.DB.prepare(
-      `INSERT INTO accounts (id, email, display_name, kind, imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, username, auth_type, secret_enc, oauth_provider, sent_folder, auto_saves_sent, max_attachment_bytes, storage_driver, relay_provider, created_at)
-       VALUES (?, ?, ?, 'imap', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Sent', ?, ?, 'provider', NULL, ?)`,
+      `INSERT INTO accounts (id, email, display_name, kind, imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, username, auth_type, secret_enc, oauth_provider, sent_folder, auto_sync, auto_saves_sent, max_attachment_bytes, storage_driver, relay_provider, created_at)
+       VALUES (?, ?, ?, 'imap', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Sent', 1, ?, ?, 'provider', NULL, ?)`,
     )
       .bind(
         id,

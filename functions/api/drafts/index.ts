@@ -9,6 +9,7 @@ import { saveDraft } from '../../_lib/mail/imap'
 import { imapMessageId, parseRelayMessageId } from '../../_lib/mail/ids'
 import { buildMime, snippetOf } from '../../_lib/mime'
 import { getStorage } from '../../_lib/storage'
+import { queueSync } from '../../_lib/sync'
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const body = await readJson<unknown>(context.request)
@@ -95,6 +96,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       if (input.draftId) {
         await deleteDraftById(context.env, input.draftId).catch(() => undefined)
       }
+      await queueSync(context.env, account, 'draft', (promise) => context.waitUntil(promise)).catch(() => undefined)
     } catch (error) {
       return fail(
         'Saving the draft failed',

@@ -3,7 +3,7 @@ export type StorageDriver = 'provider' | 'drive' | 'r2'
 export type AuthType = 'password' | 'oauth2'
 export type MailSecurity = 'tls' | 'starttls'
 export type ImapArchiveDriver = 'r2' | 'drive'
-export type Folder = 'inbox' | 'sent' | 'draft'
+export type Folder = 'inbox' | 'sent' | 'draft' | 'spam'
 export type MessageStatus = 'sent' | 'failed' | 'draft'
 export type LabelColor = 'blue' | 'emerald' | 'amber' | 'violet' | 'rose' | 'cyan' | 'lime'
 
@@ -121,6 +121,7 @@ export interface AttachmentMeta {
   filename: string
   contentType: string
   size: number
+  contentId?: string | null
 }
 
 export interface Account {

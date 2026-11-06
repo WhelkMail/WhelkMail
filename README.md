@@ -8,7 +8,7 @@
 
 WhelkMail is a self-hosted webmail client for the IMAP and SMTP accounts you already own. It runs entirely on Cloudflare Pages and Workers, so there is no mail server to operate and no infrastructure to babysit.
 
-Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a familiar, Gmail-style interface on top of the mailboxes you already use. Messages, sent copies, drafts and attachments stay on your provider unless you explicitly enable the optional archive.
+Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a familiar, Gmail-style interface on top of the mailboxes you already use. Messages, sent copies, drafts and attachments stay on your provider; only a short-lived D1 cache and the strictly opt-in long-term archive copy them.
 
 > **WhelkMail is not a mail server.** It talks IMAP and SMTP to the providers you already trust.
 
@@ -18,17 +18,17 @@ Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a fam
 
 - **One inbox, many accounts.** Gmail, Outlook, iCloud, Yahoo and custom domains side by side, with colored account labels and a shared address book.
 - **Cloudflare-native.** Pages Functions, D1, R2 and `cloudflare:sockets`: no VPS, no container, no mail server to patch.
-- **Your data stays put.** By default the client reads from the provider and does not copy bodies; the archive on R2 or Google Drive is strictly opt-in.
-- **Privacy by default.** HTML email is rendered as text, remote images and tracking pixels are never loaded, and credentials are encrypted at rest.
+- **Your data stays put.** By default the client reads from the provider. A short-lived D1 cache keeps recently listed or opened bodies for fast opens; the long-term archive on R2 or Google Drive remains strictly opt-in.
+- **Privacy by default.** HTML email is rendered in a sandboxed frame, remote images and tracking pixels stay blocked unless you enable them for a message, and credentials are encrypted at rest.
 - **Actually yours.** Self-hosted, MIT licensed, no telemetry, no vendor account required beyond your Cloudflare project.
 
 ## What you get
 
 ### Inbox experience
 
-- Message list with a full-width reading view or an optional right-side reading pane.
-- Inbox, Sent and Drafts with autosave and reopenable drafts.
-- Attachment indicators from `BODYSTRUCTURE`, without downloading the body up front.
+- Message list with a full-width reading view or an optional right-side reading pane, plus Gmail-style multi-select for delete, move and spam actions.
+- Inbox, Sent, Drafts and Spam with autosave and reopenable drafts.
+- HTML bodies in a sandboxed frame with optional remote images; attachment indicators from `BODYSTRUCTURE` without downloading the body up front.
 - Installable PWA, mobile drawer layout and Web Push notifications with per-account/folder preferences.
 - English by default, Italian available; the dictionary is extensible.
 
@@ -42,7 +42,7 @@ Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a fam
 
 ### Organization
 
-- Gmail-style labels shared across all accounts, with a label view that collects messages from Inbox, Sent and Drafts.
+- Gmail-style labels shared across all accounts, with a label view that collects messages from Inbox, Sent, Drafts and Spam.
 - Per-account incoming labels applied automatically.
 - Contacts with search, edit, CSV import/export and recipient autocomplete in To/Cc/Bcc.
 - Signatures: one shared signature or a different signature per account.
@@ -62,7 +62,7 @@ Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a fam
 - AES-256-GCM encryption for IMAP/SMTP passwords, OAuth refresh tokens and relay keys; HKDF-derived keys for session and challenge signatures.
 - One-time OAuth state stored in D1 plus PKCE (`S256`) for Google, Microsoft and Drive.
 - CSP, HSTS, `nosniff`, `X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy` on static assets and API responses.
-- HTML bodies displayed as text and remote content never loaded.
+- HTML bodies rendered in a sandboxed iframe with a restrictive CSP; scripts and forms are blocked and remote images are opt-in per message.
 
 See [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md) for the full threat model and [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md) for the deployment checklist.
 
@@ -180,12 +180,14 @@ Relay credentials can also be entered per account in the UI and are encrypted at
 
 ## Limitations
 
-- No IMAP IDLE: the list refreshes on navigation, after sending, or on manual reload. Sync can be started manually from Settings or enabled per account for the cron worker; new-mail notifications come from the same worker.
+- No IMAP IDLE: folder lists are served from the D1 mirror and a background sync refreshes new mail and flags. The client auto-refreshes a few times when a sync is in progress. Sync can also be started manually from Settings and runs every 5 minutes for accounts with automatic sync enabled (new IMAP accounts enable it by default).
 - Web Push requires VAPID keys, the separate cron worker under `worker/`, and the `CRON_SECRET` secret shared by Pages and the worker.
-- HTML bodies are displayed as extracted text; remote content is never loaded.
-- The live fetch returns the newest 30 messages per folder; it is merged with up to 100 mirrored messages. Search is client-side over the loaded set.
+- HTML bodies are rendered in a sandboxed frame. Remote images are blocked by default and can be enabled per message. Links open in a new tab; scripts and forms are disabled.
+- The first open of an account bootstraps the newest messages from the provider; afterwards the folder list comes from D1. Sync uses UIDNEXT and bounded backfill windows instead of scanning every UID on each run. Search is client-side over the loaded set.
+- Inbox, Sent, Drafts and Spam are available as folders. Messages can be selected in bulk, deleted, moved to Inbox/Spam/Trash, or marked as spam from the reading pane.
+- Recent message bodies (up to 512 KB) are cached in D1 for up to 3 days; larger messages and attachments are re-read from the provider unless a long-term archive is configured. Inline `cid:` images are embedded in the detail response.
 - A label view uses the D1 mirror when available and falls back to fetching the labeled UIDs from the provider.
-- Filters run when the inbox is loaded and when the cron worker syncs new inbox messages. Matching uses From/To/Subject/snippet, not the full message body.
+- Filters run when the inbox is loaded and when a sync ingests new inbox messages. Matching uses From/To/Subject/snippet, not the full message body.
 - Forwarding and provider deletion run from the cron worker, so they require the same setup as Web Push. They only act on new incoming messages detected after the initial sync.
 - No alias-based "send as" yet: the sender is the account address.
 - Single shared `APP_PASSWORD` (with optional TOTP); this is a personal / small-team tool, not a multi-tenant service.

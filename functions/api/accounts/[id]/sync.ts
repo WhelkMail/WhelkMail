@@ -14,7 +14,13 @@ interface SyncBody {
 }
 
 function toFolder(value: string | undefined): Folder {
-  return value === 'sent' ? 'sent' : value === 'draft' ? 'draft' : 'inbox'
+  return value === 'sent'
+    ? 'sent'
+    : value === 'draft'
+      ? 'draft'
+      : value === 'spam'
+        ? 'spam'
+        : 'inbox'
 }
 
 export const onRequestGet: PagesFunction<Env> = async (context) => {

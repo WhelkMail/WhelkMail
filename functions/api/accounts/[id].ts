@@ -155,6 +155,10 @@ export const onRequestDelete: PagesFunction<Env> = async (context) => {
     return fail('Account not found', 404, undefined, 'account_not_found')
   }
   await purgeAccountStorage(context.env, row).catch(() => undefined)
+  await context.env.DB.prepare('DELETE FROM imap_body_cache WHERE account_id = ?')
+    .bind(id)
+    .run()
+    .catch(() => undefined)
   await context.env.DB.batch([
     context.env.DB.prepare('DELETE FROM message_labels WHERE account_id = ?').bind(id),
     context.env.DB.prepare('DELETE FROM imap_messages WHERE account_id = ?').bind(id),

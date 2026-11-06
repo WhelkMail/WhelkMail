@@ -13,6 +13,7 @@ import { fail, json, readJson } from '../../_lib/http'
 import { deleteDraftById } from '../../_lib/mail/drafts'
 import { appendToSent } from '../../_lib/mail/imap'
 import { sendWithAccount } from '../../_lib/mail/smtp'
+import { queueSync } from '../../_lib/sync'
 import { buildMime, snippetOf } from '../../_lib/mime'
 import { getRelay, type RelayAdapter } from '../../_lib/relay'
 import { getStorage } from '../../_lib/storage'
@@ -199,6 +200,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     if (input.draftId) {
       await deleteDraftById(context.env, input.draftId).catch(() => undefined)
     }
+    await queueSync(context.env, account, 'sent', (promise) => context.waitUntil(promise)).catch(() => undefined)
     return json({ ok: true, warning, sentFolder })
   }
 
