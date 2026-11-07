@@ -62,7 +62,11 @@ export async function prefetchMessageBodies(
     for (const item of toFetch) {
       const bytes = bodies.get(item.uid)
       if (bytes) {
-        await putCachedBody(env, item.id, bytes)
+        await putCachedBody(
+          env,
+          { messageId: item.id, accountId: account.id, folder, uid: item.uid },
+          bytes,
+        )
       }
     }
   })

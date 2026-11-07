@@ -258,7 +258,7 @@ export default function App() {
       syncRefreshCount.current = 0
       return
     }
-    if (syncRefreshCount.current >= 3) {
+    if (syncRefreshCount.current >= 20) {
       return
     }
     const timer = window.setTimeout(() => {
@@ -266,7 +266,7 @@ export default function App() {
       setRefreshKey((key) => key + 1)
     }, 4000)
     return () => window.clearTimeout(timer)
-  }, [syncingMessages])
+  }, [syncingMessages, refreshKey])
 
   useEffect(() => {
     if (!notice) {

@@ -67,7 +67,11 @@ export async function loadRaw(
               markRead &&
               (imapId.folder === 'inbox' || imapId.folder === 'spam') &&
               (await markMirrorRead(env, id))
-            await putCachedBody(env, id, bytes)
+            await putCachedBody(
+              env,
+              { messageId: id, accountId: account.id, folder: imapId.folder, uid: imapId.uid },
+              bytes,
+            )
             return { bytes, account, folder: imapId.folder, source: 'archive', needsSeen }
           }
         }
@@ -81,7 +85,11 @@ export async function loadRaw(
     if (markRead && (imapId.folder === 'inbox' || imapId.folder === 'spam')) {
       await markMirrorRead(env, id)
     }
-    await putCachedBody(env, id, bytes)
+    await putCachedBody(
+      env,
+      { messageId: id, accountId: account.id, folder: imapId.folder, uid: imapId.uid },
+      bytes,
+    )
     return { bytes, account, folder: imapId.folder, source: 'imap', needsSeen: false }
   }
 

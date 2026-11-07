@@ -270,6 +270,7 @@ async function loadByLabel(
 }
 
 const SYNC_TTL_MS = 60_000
+const BACKFILL_RETRY_MS = 8_000
 const syncInFlight = new Set<string>()
 
 function needsBackgroundSync(state: MailboxSyncState | null): boolean {
@@ -277,7 +278,14 @@ function needsBackgroundSync(state: MailboxSyncState | null): boolean {
     return true
   }
   const lastSyncedAt = Date.parse(state.lastSyncedAt)
-  return !Number.isFinite(lastSyncedAt) || Date.now() - lastSyncedAt > SYNC_TTL_MS
+  if (!Number.isFinite(lastSyncedAt)) {
+    return true
+  }
+  const age = Date.now() - lastSyncedAt
+  if (state.status === 'partial') {
+    return age > BACKFILL_RETRY_MS
+  }
+  return age > SYNC_TTL_MS
 }
 
 async function runBackgroundSync(
@@ -373,10 +381,47 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
           loaded = []
           needSync = needsBackgroundSync(syncState)
         } else {
-          const liveStartedAt = Date.now()
-          loaded = await summariesFromImap(context.env, account, folder)
-          liveMs = Date.now() - liveStartedAt
-          needSync = true
+          // Bootstrap the D1 mirror with a single blocking sync chunk instead
+          // of opening a second IMAP connection for a separate live read.
+          const bootstrapStartedAt = Date.now()
+          try {
+            const result = await runSyncChunk(context.env, account, folder)
+            const rereadStartedAt = Date.now()
+            mirrored = await listMirrorMessages(context.env, account, folder)
+            mirrorMs += Date.now() - rereadStartedAt
+            needSync = false
+            if (result.hasMore) {
+              syncing = true
+            }
+            if (mirrored.length === 0) {
+              // Another worker may have held the lock, or the mailbox may be
+              // empty. Only read from IMAP if the folder has not completed a sync.
+              const stateAfter = await getSyncState(context.env, account.id, folder)
+              loaded =
+                stateAfter?.status === 'done'
+                  ? []
+                  : await summariesFromImap(context.env, account, folder)
+              if (stateAfter?.status === 'partial') {
+                syncing = true
+              }
+            } else {
+              loaded = mirrored
+            }
+          } catch (error) {
+            await markSyncError(
+              context.env,
+              account.id,
+              folder,
+              error instanceof Error ? error.message : String(error),
+            ).catch(() => undefined)
+            loaded = await summariesFromImap(context.env, account, folder)
+            needSync = false
+          }
+          liveMs = Date.now() - bootstrapStartedAt
+        }
+
+        if (syncState?.status === 'partial') {
+          syncing = true
         }
 
         if (needSync) {

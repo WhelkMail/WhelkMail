@@ -13,6 +13,7 @@ import { applyAccountLabel, applyFilters } from './filters'
 import { getImapArchiveStorage, type StorageAdapter } from './storage'
 import { imapMessageId } from './mail/ids'
 import { dateOf, parseHeaders, toMailbox, toMailboxes } from './mail/parse'
+import { isSchemaError } from './schema'
 
 export const SYNC_FOLDERS: Folder[] = ['inbox', 'sent', 'draft', 'spam']
 const CHUNK_SIZE = 40
@@ -408,7 +409,78 @@ async function backfillUids(
     .slice(-limit)
 }
 
+const SYNC_LOCK_TTL_MS = 5 * 60 * 1000
+
+interface SyncLock {
+  expiresAt: number
+}
+
+async function acquireSyncLock(
+  env: Env,
+  accountId: string,
+  folder: Folder,
+): Promise<SyncLock | null> {
+  const key = `${accountId}:${folder}`
+  const now = Date.now()
+  const expiresAt = now + SYNC_LOCK_TTL_MS
+  try {
+    const result = await env.DB.prepare(
+      `INSERT INTO imap_sync_locks (lock_key, expires_at) VALUES (?, ?)
+       ON CONFLICT(lock_key) DO UPDATE SET expires_at = excluded.expires_at
+       WHERE imap_sync_locks.expires_at < ?`,
+    )
+      .bind(key, expiresAt, now)
+      .run()
+    return (result.meta.changes ?? 0) > 0 ? { expiresAt } : null
+  } catch (error) {
+    if (isSchemaError(error)) {
+      // Older databases may not have the lock table; run unlocked.
+      return { expiresAt: 0 }
+    }
+    throw error
+  }
+}
+
+async function releaseSyncLock(
+  env: Env,
+  accountId: string,
+  folder: Folder,
+  lock: SyncLock,
+): Promise<void> {
+  if (lock.expiresAt === 0) {
+    return
+  }
+  try {
+    await env.DB.prepare(
+      'DELETE FROM imap_sync_locks WHERE lock_key = ? AND expires_at = ?',
+    )
+      .bind(`${accountId}:${folder}`, lock.expiresAt)
+      .run()
+  } catch {
+    // The lock expires on its own; release is best effort.
+  }
+}
+
 export async function runSyncChunk(
+  env: Env,
+  account: AccountRow,
+  folder: Folder,
+): Promise<{ folders: MailboxSyncState[]; hasMore: boolean }> {
+  const lock = await acquireSyncLock(env, account.id, folder)
+  if (!lock) {
+    console.log(`[sync] ${account.id}/${folder} skipped (lock held by another worker)`)
+    const folders = await getSyncStates(env, account.id)
+    const current = folders.find((item) => item.folder === folder)
+    return { folders, hasMore: current ? current.status === 'partial' : false }
+  }
+  try {
+    return await runSyncChunkLocked(env, account, folder)
+  } finally {
+    await releaseSyncLock(env, account.id, folder, lock)
+  }
+}
+
+async function runSyncChunkLocked(
   env: Env,
   account: AccountRow,
   folder: Folder,

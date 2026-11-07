@@ -1,3 +1,4 @@
+import type { Folder } from '../../shared/types'
 import type { Env } from './env'
 import { isSchemaError } from './schema'
 
@@ -47,9 +48,16 @@ export async function getCachedBody(env: Env, messageId: string): Promise<Uint8A
   }
 }
 
+export interface CachedBodyKey {
+  messageId: string
+  accountId: string
+  folder: Folder
+  uid: number
+}
+
 export async function putCachedBody(
   env: Env,
-  messageId: string,
+  key: CachedBodyKey,
   bytes: Uint8Array,
 ): Promise<void> {
   if (cacheAvailable === false || bytes.byteLength > MAX_CACHED_BODY_BYTES) {
@@ -57,14 +65,25 @@ export async function putCachedBody(
   }
   try {
     await env.DB.prepare(
-      `INSERT INTO imap_body_cache (message_id, body, size, cached_at)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO imap_body_cache (message_id, account_id, folder, uid, body, size, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(message_id) DO UPDATE SET
+         account_id = excluded.account_id,
+         folder = excluded.folder,
+         uid = excluded.uid,
          body = excluded.body,
          size = excluded.size,
          cached_at = excluded.cached_at`,
     )
-      .bind(messageId, bytes, bytes.byteLength, new Date().toISOString())
+      .bind(
+        key.messageId,
+        key.accountId,
+        key.folder,
+        key.uid,
+        bytes,
+        bytes.byteLength,
+        new Date().toISOString(),
+      )
       .run()
     cacheAvailable = true
     writesSinceCleanup += 1

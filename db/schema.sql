@@ -179,6 +179,13 @@ CREATE TABLE IF NOT EXISTS imap_body_cache (
 
 CREATE INDEX IF NOT EXISTS idx_imap_body_cache_cached ON imap_body_cache (cached_at);
 
+CREATE TABLE IF NOT EXISTS imap_sync_locks (
+  lock_key TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_imap_sync_locks_expires ON imap_sync_locks (expires_at);
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id TEXT PRIMARY KEY,
   endpoint TEXT NOT NULL UNIQUE,
