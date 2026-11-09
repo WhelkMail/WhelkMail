@@ -14,6 +14,18 @@ Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a fam
 
 [Quick start](#quick-start) · [Deploy on Cloudflare](#deploy-on-cloudflare) · [Security](#security) · [Documentation](#documentation)
 
+## Screenshots
+
+![WhelkMail inbox](site/screenshots/inbox.png)
+
+| Reading a message | Composing |
+| --- | --- |
+| ![Message view](site/screenshots/message.png) | ![Compose window](site/screenshots/compose.png) |
+
+| Account settings | Connect an address |
+| --- | --- |
+| ![Account settings](site/screenshots/settings.png) | ![Connect an address](site/screenshots/add-account.png) |
+
 ## Why WhelkMail
 
 - **One inbox, many accounts.** Gmail, Outlook, iCloud, Yahoo and custom domains side by side, with colored account labels and a shared address book.

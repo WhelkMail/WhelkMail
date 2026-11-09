@@ -278,9 +278,10 @@ h3 {
   filter: blur(20px);
 }
 
-.app-window {
+.hero-shot {
   position: relative;
   z-index: 1;
+  margin: 0;
   overflow: hidden;
   border: 1px solid rgba(229, 231, 235, 0.9);
   border-radius: 20px;
@@ -288,195 +289,43 @@ h3 {
   box-shadow: var(--shadow);
 }
 
-.app-topbar {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.7rem 0.9rem;
+.hero-shot img {
+  width: 100%;
+  height: auto;
+}
+
+.section-soft {
+  border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  background: #fbfcfe;
+  background: linear-gradient(180deg, #fff 0%, var(--canvas) 100%);
 }
 
-.window-dot {
-  width: 0.48rem;
-  height: 0.48rem;
-  border-radius: 999px;
-  background: #dfe3e8;
-}
-
-.window-dot:first-child {
-  background: #f3b5b3;
-}
-
-.app-search {
-  flex: 1;
-  margin-left: 0.5rem;
-  padding: 0.38rem 0.8rem;
-  border-radius: 999px;
-  background: #eef2f8;
-  color: #8a9099;
-  font-size: 0.7rem;
-}
-
-.app-avatar {
+.gallery {
   display: grid;
-  place-items: center;
-  width: 1.6rem;
-  height: 1.6rem;
-  border-radius: 999px;
-  background: var(--brand);
-  color: #fff;
-  font-size: 0.68rem;
-  font-weight: 700;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 2.2rem;
 }
 
-.app-body {
-  display: grid;
-  grid-template-columns: 8.6rem 1.15fr 1.25fr;
-  min-height: 22rem;
-}
-
-.app-sidebar {
-  padding: 0.85rem 0.6rem;
-  border-right: 1px solid var(--line);
-  background: #fbfcfe;
-}
-
-.side-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
-  padding: 0.42rem 0.55rem;
-  border-radius: 0.55rem;
-  color: #3c4043;
-  font-size: 0.72rem;
-}
-
-.side-item span {
-  color: #8a9099;
-  font-size: 0.64rem;
-}
-
-.side-active {
-  background: var(--brand-soft);
-  color: var(--brand-strong);
-  font-weight: 700;
-}
-
-.side-label {
-  margin: 0.8rem 0 0.25rem;
-  padding-inline: 0.55rem;
-  color: #9aa0a6;
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.tag {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 999px;
-}
-
-.tag-blue {
-  background: #4c8bf5;
-}
-
-.tag-green {
-  background: #34a853;
-}
-
-.tag-amber {
-  background: #f9ab00;
-}
-
-.app-list {
-  border-right: 1px solid var(--line);
-  background: #fff;
-}
-
-.mail-row {
-  padding: 0.65rem 0.8rem;
-  border-bottom: 1px solid #f0f2f5;
-  font-size: 0.66rem;
-  color: #5f6368;
-}
-
-.mail-unread {
-  background: #fff8f7;
-}
-
-.mail-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.18rem;
-  color: #9aa0a6;
-  font-size: 0.6rem;
-}
-
-.mail-unread .mail-top strong {
-  color: var(--ink);
-  font-weight: 700;
-}
-
-.mail-subject {
+.shot {
+  margin: 0;
   overflow: hidden;
-  color: #3c4043;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mail-unread .mail-subject {
-  color: var(--ink);
-}
-
-.mail-snippet {
-  overflow: hidden;
-  margin-top: 0.15rem;
-  color: #9aa0a6;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.app-reader {
-  padding: 1rem 1.1rem;
-  background: #fff;
-  font-size: 0.72rem;
-  color: #4b5056;
-}
-
-.reader-meta {
-  margin-bottom: 0.35rem;
-  color: #9aa0a6;
-  font-size: 0.62rem;
-}
-
-.app-reader h3 {
-  margin-bottom: 0.7rem;
-  font-size: 0.95rem;
-}
-
-.app-reader p {
-  margin-bottom: 0.65rem;
-}
-
-.reader-actions {
-  display: flex;
-  gap: 0.4rem;
-  margin-top: 0.9rem;
-}
-
-.reader-actions span {
-  padding: 0.28rem 0.55rem;
   border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  font-size: 0.6rem;
-  color: #5f6368;
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: 0 24px 50px -40px rgba(32, 33, 36, 0.5);
+}
+
+.shot img {
+  width: 100%;
+  height: auto;
+}
+
+.shot figcaption {
+  padding: 0.75rem 0.95rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .section {
@@ -787,14 +636,6 @@ h3 {
     margin-inline: auto;
   }
 
-  .app-body {
-    grid-template-columns: 8rem 1fr;
-  }
-
-  .app-reader {
-    display: none;
-  }
-
   .cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -813,16 +654,12 @@ h3 {
     gap: 0.8rem;
   }
 
-  .app-body {
+  .cards,
+  .steps {
     grid-template-columns: 1fr;
   }
 
-  .app-sidebar {
-    display: none;
-  }
-
-  .cards,
-  .steps {
+  .gallery {
     grid-template-columns: 1fr;
   }
 

@@ -31,6 +31,7 @@
         </a>
         <nav class="site-nav" aria-label="Main">
           <a href="#features">Features</a>
+          <a href="#screenshots">Screenshots</a>
           <a href="#security">Security</a>
           <a href="#deploy">Deploy</a>
           <a href="https://github.com/WhelkMail/WhelkMail">GitHub</a>
@@ -72,60 +73,15 @@
             </ul>
           </div>
 
-          <div class="hero-visual" aria-hidden="true">
-            <div class="app-window">
-              <div class="app-topbar">
-                <span class="window-dot"></span>
-                <span class="window-dot"></span>
-                <span class="window-dot"></span>
-                <div class="app-search">Search mail</div>
-                <div class="app-avatar">M</div>
-              </div>
-              <div class="app-body">
-                <aside class="app-sidebar">
-                  <div class="side-item side-active">Inbox <span>12</span></div>
-                  <div class="side-item">Sent</div>
-                  <div class="side-item">Drafts <span>2</span></div>
-                  <div class="side-label">Labels</div>
-                  <div class="side-item"><i class="tag tag-blue"></i> Work</div>
-                  <div class="side-item"><i class="tag tag-green"></i> Personal</div>
-                  <div class="side-item"><i class="tag tag-amber"></i> Receipts</div>
-                </aside>
-                <div class="app-list">
-                  <div class="mail-row mail-unread">
-                    <div class="mail-top"><strong>Anna Riva</strong><span>09:41</span></div>
-                    <div class="mail-subject">Q3 roadmap and next steps</div>
-                    <div class="mail-snippet">Here is the deck we discussed — tell me what you think…</div>
-                  </div>
-                  <div class="mail-row">
-                    <div class="mail-top"><strong>Cloudflare</strong><span>08:12</span></div>
-                    <div class="mail-subject">Your weekly analytics report</div>
-                    <div class="mail-snippet">Traffic is up 18% week over week. Here is the breakdown…</div>
-                  </div>
-                  <div class="mail-row">
-                    <div class="mail-top"><strong>Marco</strong><span>Yesterday</span></div>
-                    <div class="mail-subject">Re: dinner on Friday?</div>
-                    <div class="mail-snippet">Works for me. Same place as last time?</div>
-                  </div>
-                  <div class="mail-row">
-                    <div class="mail-top"><strong>Stripe</strong><span>Yesterday</span></div>
-                    <div class="mail-subject">Your invoice is ready</div>
-                    <div class="mail-snippet">Invoice #0042 for the month of October…</div>
-                  </div>
-                </div>
-                <article class="app-reader">
-                  <p class="reader-meta">Anna Riva &lt;anna@example.com&gt;</p>
-                  <h3>Q3 roadmap and next steps</h3>
-                  <p>Hi,</p>
-                  <p>
-                    thanks for the call. I attached the deck we discussed. The short version:
-                    ship the inbox refresh first, then the archive improvements.
-                  </p>
-                  <p>Let me know if Friday works for a quick review.</p>
-                  <div class="reader-actions"><span>Reply</span><span>Forward</span></div>
-                </article>
-              </div>
-            </div>
+          <div class="hero-visual">
+            <figure class="hero-shot">
+              <img
+                src="./screenshots/inbox.png"
+                width="1920"
+                height="913"
+                alt="WhelkMail inbox showing multiple accounts, shared labels and a message list"
+              />
+            </figure>
             <div class="glow"></div>
           </div>
         </div>
@@ -227,6 +183,60 @@
               <h3>Contacts and signatures</h3>
               <p>A shared address book with CSV import/export and autocomplete, plus one shared signature or a different signature per account.</p>
             </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="screenshots" class="section section-soft">
+        <div class="wrap">
+          <p class="eyebrow">A look inside</p>
+          <h2>Real screens, real workflow.</h2>
+          <p class="section-lede">
+            A familiar Gmail-style interface on top of the accounts you already own.
+            Every screenshot below is a functional part of WhelkMail.
+          </p>
+
+          <div class="gallery">
+            <figure class="shot">
+              <img
+                src="./screenshots/message.png"
+                width="1920"
+                height="913"
+                loading="lazy"
+                alt="A message open in WhelkMail with sandboxed HTML content and remote images blocked"
+              />
+              <figcaption>Messages open instantly; remote images stay blocked until you allow them.</figcaption>
+            </figure>
+            <figure class="shot">
+              <img
+                src="./screenshots/compose.png"
+                width="1920"
+                height="913"
+                loading="lazy"
+                alt="Compose window in WhelkMail with sender, recipients and attachment controls"
+              />
+              <figcaption>Compose with per-account senders, attachments and draft autosave.</figcaption>
+            </figure>
+            <figure class="shot">
+              <img
+                src="./screenshots/settings.png"
+                width="1920"
+                height="913"
+                loading="lazy"
+                alt="WhelkMail account settings showing IMAP connection state and mailbox sync"
+              />
+              <figcaption>Per-account settings, sync status and label automation in one place.</figcaption>
+            </figure>
+            <figure class="shot">
+              <img
+                src="./screenshots/add-account.png"
+                width="1920"
+                height="913"
+                loading="lazy"
+                alt="WhelkMail connect-an-address form for IMAP/SMTP or send-only relay accounts"
+              />
+              <figcaption>Connect any IMAP/SMTP mailbox, or a send-only relay for domains without SMTP.</figcaption>
+            </figure>
           </div>
         </div>
       </section>
