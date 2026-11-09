@@ -17,11 +17,14 @@ import type {
   MailboxSyncState,
   MailFilter,
   MessageDetail,
+  MessageSearchResult,
   MessageSummary,
   PushPrefs,
   PushSubscriptionInput,
+  SearchScope,
   SendPayload,
   StorageOptions,
+  SyncOverview,
   TotpEnableResult,
   TotpSetup,
   TwoFactorStatus,
@@ -120,6 +123,9 @@ export const api = {
     id: string,
   ): Promise<{ folders: MailboxSyncState[]; hasMore: boolean }> {
     return request(`/api/accounts/${id}/sync`)
+  },
+  syncOverview(): Promise<SyncOverview> {
+    return request('/api/sync')
   },
   runSync(
     id: string,
@@ -229,6 +235,21 @@ export const api = {
   },
   message(id: string): Promise<{ message: MessageDetail }> {
     return request(`/api/messages/${encodeURIComponent(id)}`)
+  },
+  search(options: {
+    query: string
+    accountId: string
+    folder?: SearchScope
+    contacts?: boolean
+  }): Promise<MessageSearchResult> {
+    const params = new URLSearchParams({ q: options.query, accountId: options.accountId })
+    if (options.folder && options.folder !== 'all') {
+      params.set('folder', options.folder)
+    }
+    if (options.contacts === false) {
+      params.set('contacts', '0')
+    }
+    return request(`/api/messages/search?${params.toString()}`)
   },
   messageAction(
     ids: string[],

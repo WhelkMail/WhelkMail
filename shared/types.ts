@@ -48,6 +48,18 @@ export interface SyncResult {
   hasMore: boolean
 }
 
+export interface AccountSyncOverview {
+  accountId: string
+  email: string
+  syncing: boolean
+  folders: MailboxSyncState[]
+}
+
+export interface SyncOverview {
+  accounts: AccountSyncOverview[]
+  syncing: boolean
+}
+
 export interface PushSubscriptionInput {
   endpoint: string
   keys: {
@@ -109,6 +121,7 @@ export type SignatureMode = 'shared' | 'per_account'
 export interface AppSettings {
   defaultSignature: string
   signatureMode: SignatureMode
+  allowRemoteImages: boolean
 }
 
 export interface Mailbox {
@@ -185,6 +198,14 @@ export interface MessageDetail extends MessageSummary {
 export interface StorageOptions {
   drive: boolean
   r2: boolean
+}
+
+export type SearchScope = 'all' | 'inbox' | 'sent' | 'draft' | 'spam'
+
+export interface MessageSearchResult {
+  messages: MessageSummary[]
+  contacts: Contact[]
+  errors: { accountId: string; email: string; message: string }[]
 }
 
 export interface AttachmentInput {

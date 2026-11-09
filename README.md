@@ -49,7 +49,7 @@ Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a fam
 - Multiple accounts in one view, each with its own IMAP/SMTP servers and credentials.
 - Password, app-password, Google OAuth2 and Microsoft OAuth2 (XOAUTH2) authentication.
 - Sending through each account's own SMTP server.
-- Send-only "relay" accounts (SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark) for domains without SMTP, with sent/draft archive on Drive or R2.
+- Send-only "relay" accounts (SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark or a custom SMTP server with manual host/port/credentials) for domains without SMTP, with sent/draft archive on Drive or R2.
 - Optional archive and provider cleanup for IMAP: archive bodies and attachments, then move the original to the provider Trash.
 
 ### Organization
@@ -192,10 +192,10 @@ Relay credentials can also be entered per account in the UI and are encrypted at
 
 ## Limitations
 
-- No IMAP IDLE: folder lists are served from the D1 mirror and a background sync refreshes new mail and flags. The client auto-refreshes a few times when a sync is in progress. Sync can also be started manually from Settings and runs every 5 minutes for accounts with automatic sync enabled (new IMAP accounts enable it by default).
+- No IMAP IDLE: folder lists are served from the D1 mirror and a background sync refreshes new mail and flags. While a sync is in progress, the client polls the lightweight sync status with backoff and refreshes the list only when new UIDs or folder state change. Sync can also be started manually from Settings and runs every 5 minutes for accounts with automatic sync enabled (new IMAP accounts enable it by default).
 - Web Push requires VAPID keys, the separate cron worker under `worker/`, and the `CRON_SECRET` secret shared by Pages and the worker.
 - HTML bodies are rendered in a sandboxed frame. Remote images are blocked by default and can be enabled per message. Links open in a new tab; scripts and forms are disabled.
-- The first open of an account bootstraps the newest messages from the provider; afterwards the folder list comes from D1. Sync uses UIDNEXT and bounded backfill windows instead of scanning every UID on each run. Search is client-side over the loaded set.
+- The first open of an account bootstraps the newest messages from the provider; afterwards the folder list comes from D1. Sync uses UIDNEXT and bounded backfill windows instead of scanning every UID on each run. Search runs against the D1 mirror across Inbox, Sent, Drafts and Spam, with an optional per-folder scope, and also matches contacts.
 - Inbox, Sent, Drafts and Spam are available as folders. Messages can be selected in bulk, deleted, moved to Inbox/Spam/Trash, or marked as spam from the reading pane.
 - Recent message bodies (up to 512 KB) are cached in D1 for up to 3 days; larger messages and attachments are re-read from the provider unless a long-term archive is configured. Inline `cid:` images are embedded in the detail response.
 - A label view uses the D1 mirror when available and falls back to fetching the labeled UIDs from the provider.

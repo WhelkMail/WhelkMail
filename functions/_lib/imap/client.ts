@@ -315,7 +315,7 @@ export class ImapConnection {
   }
 
   async firstUid(): Promise<number | null> {
-    const { parts } = await this.command('UID FETCH 1 (UID)')
+    const { parts } = await this.command('FETCH 1 (UID)')
     for (const part of parts) {
       const match = part.line.match(/\bUID (\d+)/)
       if (match) {
@@ -326,7 +326,7 @@ export class ImapConnection {
   }
 
   async fetchUidsBySequence(start: number, end: number): Promise<number[]> {
-    const { parts } = await this.command(`UID FETCH ${start}:${end} (UID)`)
+    const { parts } = await this.command(`FETCH ${start}:${end} (UID)`)
     const uids: number[] = []
     for (const part of parts) {
       const match = part.line.match(/\bUID (\d+)/)

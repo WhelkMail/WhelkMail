@@ -51,6 +51,8 @@ interface SettingsProps {
   onAddAccount: () => void
   readingPane: boolean
   onReadingPaneChange: (value: boolean) => void
+  allowRemoteImages: boolean
+  onAllowRemoteImagesChange: (value: boolean) => void
   defaultSenderNew: string
   onDefaultSenderNewChange: (value: string) => void
   defaultSenderReply: string
@@ -139,6 +141,14 @@ function AccountCard({
       relayApiSecret: relayApiSecret.trim() || undefined,
       relayDomain: relayDomain.trim() || undefined,
       relayRegion: relayRegion === 'eu' ? 'eu' : 'us',
+      ...(relayMeta?.manual
+        ? {
+            smtpHost: smtpHost.trim(),
+            smtpPort: Number(smtpPort),
+            smtpSecurity,
+            username: username.trim(),
+          }
+        : {}),
     })
     setRelayApiKey('')
     setRelayApiSecret('')
@@ -553,9 +563,48 @@ function AccountCard({
                 type="password"
                 value={relayApiKey}
                 onChange={(event) => setRelayApiKey(event.target.value)}
-                placeholder={t('settings.relayApiKeyPlaceholder')}
+                placeholder={
+                  relayMeta?.manual
+                    ? t('settings.relayPasswordPlaceholder')
+                    : t('settings.relayApiKeyPlaceholder')
+                }
                 className="rounded-lg border border-line px-2 py-1.5 text-xs outline-none focus:border-brand"
               />
+              {relayMeta?.manual ? (
+                <>
+                  <input
+                    value={smtpHost}
+                    onChange={(event) => setSmtpHost(event.target.value)}
+                    placeholder={t('settings.smtpHost')}
+                    className="rounded-lg border border-line px-2 py-1.5 text-xs outline-none focus:border-brand"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      value={smtpPort}
+                      onChange={(event) => setSmtpPort(event.target.value)}
+                      inputMode="numeric"
+                      placeholder={t('settings.port')}
+                      className="w-20 rounded-lg border border-line px-2 py-1.5 text-xs outline-none focus:border-brand"
+                    />
+                    <select
+                      value={smtpSecurity}
+                      onChange={(event) =>
+                        setSmtpSecurity(event.target.value as MailSecurity)
+                      }
+                      className="flex-1 rounded-lg border border-line px-2 py-1.5 text-xs outline-none"
+                    >
+                      <option value="tls">TLS</option>
+                      <option value="starttls">STARTTLS</option>
+                    </select>
+                  </div>
+                  <input
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    placeholder={t('settings.username')}
+                    className="rounded-lg border border-line px-2 py-1.5 text-xs outline-none focus:border-brand"
+                  />
+                </>
+              ) : null}
               {relayMeta?.needsSecret ? (
                 <input
                   type="password"
@@ -679,6 +728,8 @@ export function Settings({
   onAddAccount,
   readingPane,
   onReadingPaneChange,
+  allowRemoteImages,
+  onAllowRemoteImagesChange,
   defaultSenderNew,
   onDefaultSenderNewChange,
   defaultSenderReply,
@@ -793,6 +844,16 @@ export function Settings({
                 />
                 {t('settings.readingPane')}
               </label>
+              <label className="mt-3 flex items-center gap-2 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={allowRemoteImages}
+                  onChange={(event) => onAllowRemoteImagesChange(event.target.checked)}
+                  className="h-4 w-4"
+                />
+                {t('settings.remoteImages')}
+              </label>
+              <p className="mt-1 text-[11px] text-muted">{t('settings.remoteImagesHint')}</p>
             </div>
 
             <div className="mt-3 rounded-2xl border border-line bg-white p-5">

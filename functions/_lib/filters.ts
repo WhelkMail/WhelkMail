@@ -182,7 +182,7 @@ export async function applyAccountLabel(
     const createdAt = new Date().toISOString()
     const statements: D1PreparedStatement[] = []
     for (const message of messages) {
-      if (message.folder !== 'inbox' || message.labelIds.includes(labelId)) {
+      if (message.labelIds.includes(labelId)) {
         continue
       }
       message.labelIds.push(labelId)
@@ -195,6 +195,33 @@ export async function applyAccountLabel(
     if (statements.length > 0) {
       await env.DB.batch(statements)
     }
+  } catch (error) {
+    if (!isSchemaError(error)) {
+      throw error
+    }
+  }
+}
+
+export async function backfillAccountLabel(
+  env: Env,
+  accountId: string,
+  labelId: string | null,
+): Promise<void> {
+  if (!labelId) {
+    return
+  }
+  const createdAt = new Date().toISOString()
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO message_labels (message_id, account_id, folder, label_id, created_at)
+         SELECT id, account_id, folder, ?, ? FROM imap_messages WHERE account_id = ?`,
+      ).bind(labelId, createdAt, accountId),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO message_labels (message_id, account_id, folder, label_id, created_at)
+         SELECT id, account_id, folder, ?, ? FROM messages WHERE account_id = ?`,
+      ).bind(labelId, createdAt, accountId),
+    ])
   } catch (error) {
     if (!isSchemaError(error)) {
       throw error

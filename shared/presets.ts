@@ -100,6 +100,7 @@ export interface RelayProviderOption {
   label: string
   needsSecret: boolean
   needsDomain: boolean
+  manual?: boolean
 }
 
 export const RELAY_PROVIDERS: RelayProviderOption[] = [
@@ -110,6 +111,7 @@ export const RELAY_PROVIDERS: RelayProviderOption[] = [
   { id: 'sendgrid', label: 'SendGrid', needsSecret: false, needsDomain: false },
   { id: 'mailjet', label: 'Mailjet', needsSecret: true, needsDomain: false },
   { id: 'postmark', label: 'Postmark', needsSecret: false, needsDomain: false },
+  { id: 'custom', label: 'SMTP personalizzato', needsSecret: false, needsDomain: false, manual: true },
 ]
 
 export function findRelayProvider(id: string | undefined): RelayProviderOption | undefined {

@@ -3,6 +3,7 @@ import { accountUpdateSchema } from '../../../shared/schemas'
 import { encryptString } from '../../_lib/crypto'
 import { getAccountRow, publicAccount } from '../../_lib/db'
 import { purgeAccountStorage } from '../../_lib/deletion'
+import { backfillAccountLabel } from '../../_lib/filters'
 import type { Env } from '../../_lib/env'
 import { fail, json, readJson } from '../../_lib/http'
 
@@ -102,6 +103,9 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
     if (!providerMeta) {
       return fail('Unsupported relay provider', 400, undefined, 'relay_provider_unsupported')
     }
+    if (providerMeta.manual && (!smtpHost || !smtpPort || !smtpSecurity)) {
+      return fail('SMTP configuration is incomplete', 400, undefined, 'hosts_required')
+    }
     if (providerMeta.needsSecret && !relayApiSecretEnc) {
       return fail('Relay API secret is required', 400, undefined, 'relay_secret_required')
     }
@@ -140,6 +144,10 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
       id,
     )
     .run()
+
+  if (incomingLabelId && incomingLabelId !== row.incoming_label_id) {
+    await backfillAccountLabel(context.env, id, incomingLabelId)
+  }
 
   const updated = await getAccountRow(context.env, id)
   if (!updated) {

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   AlertCircle,
   FolderInput,
@@ -23,6 +24,8 @@ interface MailListProps {
   syncing?: boolean
   folder: Folder
   labelName?: string | null
+  titleOverride?: string | null
+  showFolder?: boolean
   fullWidth?: boolean
   className?: string
   selectedIds?: string[]
@@ -31,6 +34,33 @@ interface MailListProps {
   onToggleSelect?: (id: string) => void
   onToggleSelectAll?: (ids: string[]) => void
   onAction?: (action: MessageAction, target?: MoveTarget) => void
+  onMessageAction?: (id: string, action: MessageAction, target?: MoveTarget) => void
+}
+
+interface SwipeGesture {
+  id: string
+  startX: number
+  startY: number
+  dx: number
+  dy: number
+  moved: boolean
+  swiping: boolean
+  longPressFired: boolean
+  longPressTimer: number | null
+}
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window === 'undefined' ? false : window.matchMedia('(max-width: 767px)').matches,
+  )
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return isMobile
 }
 
 function primaryLabel(message: MessageSummary, fallback: string): string {
@@ -59,6 +89,8 @@ export function MailList({
   syncing = false,
   folder,
   labelName,
+  titleOverride,
+  showFolder = false,
   fullWidth = false,
   className,
   selectedIds = [],
@@ -67,9 +99,15 @@ export function MailList({
   onToggleSelect,
   onToggleSelectAll,
   onAction,
+  onMessageAction,
 }: MailListProps) {
   const { t, locale } = useI18n()
-  const title = labelName ?? folderName(folder, t)
+  const isMobile = useIsMobile()
+  const [selectMode, setSelectMode] = useState(false)
+  const [swipe, setSwipe] = useState<{ id: string; dx: number } | null>(null)
+  const gestureRef = useRef<SwipeGesture | null>(null)
+  const suppressClickRef = useRef(false)
+  const title = titleOverride ?? labelName ?? folderName(folder, t)
   const empty = labelName
     ? t('list.emptyLabel')
     : folder === 'inbox'
@@ -95,6 +133,149 @@ export function MailList({
   const someSelected = allIds.some((id) => selectedSet.has(id))
   const selectedCount = selectedIds.length
   const canSelect = Boolean(onToggleSelect && onToggleSelectAll)
+  const showToolbar = canSelect && (selectedCount > 0 || (isMobile && selectMode))
+  const rightAction =
+    folder === 'spam'
+      ? ({ action: 'move', target: 'inbox' } as const)
+      : folder === 'inbox'
+        ? ({ action: 'spam', target: undefined } as const)
+        : null
+
+  useEffect(() => {
+    setSelectMode(false)
+    setSwipe(null)
+    gestureRef.current = null
+  }, [folder])
+
+  useEffect(() => {
+    if (!isMobile) {
+      setSelectMode(false)
+    }
+  }, [isMobile])
+
+  function clearSelection() {
+    onToggleSelectAll?.([])
+    setSelectMode(false)
+  }
+
+  function enterSelection(id: string) {
+    if (!canSelect) {
+      return
+    }
+    setSelectMode(true)
+    if (!selectedSet.has(id)) {
+      onToggleSelect?.(id)
+    }
+  }
+
+  function cancelLongPress(gesture: SwipeGesture) {
+    if (gesture.longPressTimer !== null) {
+      window.clearTimeout(gesture.longPressTimer)
+      gesture.longPressTimer = null
+    }
+  }
+
+  function handlePointerDown(
+    event: ReactPointerEvent<HTMLDivElement>,
+    message: MessageSummary,
+  ) {
+    if (!isMobile || selectMode || (event.pointerType === 'mouse' && event.button !== 0)) {
+      return
+    }
+    const target = event.target as HTMLElement
+    if (target.closest('input, select, label, button, a')) {
+      return
+    }
+    suppressClickRef.current = false
+    gestureRef.current = {
+      id: message.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      dx: 0,
+      dy: 0,
+      moved: false,
+      swiping: false,
+      longPressFired: false,
+      longPressTimer: window.setTimeout(() => {
+        const gesture = gestureRef.current
+        if (!gesture || gesture.moved || gesture.swiping) {
+          return
+        }
+        gesture.longPressFired = true
+        gesture.longPressTimer = null
+        suppressClickRef.current = true
+        enterSelection(message.id)
+      }, 450),
+    }
+  }
+
+  function handlePointerMove(
+    event: ReactPointerEvent<HTMLDivElement>,
+    message: MessageSummary,
+  ) {
+    const gesture = gestureRef.current
+    if (!gesture || gesture.id !== message.id) {
+      return
+    }
+    gesture.dx = event.clientX - gesture.startX
+    gesture.dy = event.clientY - gesture.startY
+    if (Math.abs(gesture.dx) > 12 || Math.abs(gesture.dy) > 12) {
+      gesture.moved = true
+      cancelLongPress(gesture)
+    }
+    if (
+      gesture.longPressFired ||
+      (gesture.moved && Math.abs(gesture.dy) > Math.abs(gesture.dx))
+    ) {
+      return
+    }
+    if (Math.abs(gesture.dx) > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy)) {
+      gesture.swiping = true
+      if (event.cancelable) {
+        event.preventDefault()
+      }
+      setSwipe({ id: message.id, dx: Math.max(-120, Math.min(120, gesture.dx)) })
+    }
+  }
+
+  function handlePointerUp(message: MessageSummary) {
+    const gesture = gestureRef.current
+    if (!gesture || gesture.id !== message.id) {
+      gestureRef.current = null
+      return
+    }
+    gestureRef.current = null
+    cancelLongPress(gesture)
+    setSwipe(null)
+    if (gesture.longPressFired) {
+      suppressClickRef.current = true
+      return
+    }
+    if (!gesture.swiping || !gesture.moved) {
+      if (gesture.moved) {
+        suppressClickRef.current = true
+      }
+      return
+    }
+    suppressClickRef.current = true
+    if (gesture.dx <= -60) {
+      onMessageAction?.(message.id, 'delete')
+    } else if (gesture.dx >= 60 && rightAction) {
+      onMessageAction?.(message.id, rightAction.action, rightAction.target)
+    }
+  }
+
+  function handleRowClick(message: MessageSummary) {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false
+      return
+    }
+    if (isMobile && selectMode) {
+      onToggleSelect?.(message.id)
+      return
+    }
+    onSelect(message.id)
+  }
 
   return (
     <section
@@ -105,65 +286,86 @@ export function MailList({
       )}
     >
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4 text-sm">
-        {selectedCount > 0 && canSelect ? (
+        {showToolbar ? (
           <>
             <button
               type="button"
-              onClick={() => onToggleSelectAll?.([])}
+              onClick={clearSelection}
               className="rounded p-1 text-muted hover:bg-slate-100"
               aria-label={t('list.clearSelection')}
               title={t('list.clearSelection')}
             >
               <X size={16} />
             </button>
-            <span className="text-xs font-medium">{t('list.selected', { count: selectedCount })}</span>
-            <div className="ml-auto flex items-center gap-1">
-              <button
-                type="button"
-                disabled={actionBusy}
-                onClick={() => onAction?.('delete')}
-                className="rounded p-1.5 text-muted hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
-                aria-label={t('list.delete')}
-                title={t('list.delete')}
-              >
-                <Trash2 size={16} />
-              </button>
-              <button
-                type="button"
-                disabled={actionBusy}
-                onClick={() => onAction?.('spam')}
-                className="rounded p-1.5 text-muted hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
-                aria-label={t('list.spamAction')}
-                title={t('list.spamAction')}
-              >
-                <ShieldAlert size={16} />
-              </button>
-              <label className="flex items-center gap-1 rounded px-1.5 py-1 text-muted hover:bg-slate-100">
-                <FolderInput size={15} />
-                <select
-                  value=""
+            <span className="text-xs font-medium">
+              {selectedCount > 0
+                ? t('list.selected', { count: selectedCount })
+                : t('list.select')}
+            </span>
+            {selectedCount > 0 ? (
+              <div className="ml-auto flex items-center gap-1">
+                <button
+                  type="button"
                   disabled={actionBusy}
-                  onChange={(event) => {
-                    const target = event.target.value as MoveTarget
-                    if (target) {
-                      onAction?.('move', target)
-                    }
-                    event.target.value = ''
-                  }}
-                  aria-label={t('list.moveTo')}
-                  className="max-w-28 bg-transparent text-xs outline-none"
+                  onClick={() => onAction?.('delete')}
+                  className="rounded p-1.5 text-muted hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                  aria-label={t('list.delete')}
+                  title={t('list.delete')}
                 >
-                  <option value="">{t('list.moveTo')}</option>
-                  <option value="inbox">{t('list.moveInbox')}</option>
-                  <option value="spam">{t('list.moveSpam')}</option>
-                  <option value="trash">{t('list.moveTrash')}</option>
-                </select>
+                  <Trash2 size={16} />
+                </button>
+                <button
+                  type="button"
+                  disabled={actionBusy}
+                  onClick={() => onAction?.('spam')}
+                  className="rounded p-1.5 text-muted hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                  aria-label={t('list.spamAction')}
+                  title={t('list.spamAction')}
+                >
+                  <ShieldAlert size={16} />
+                </button>
+                <label className="flex items-center gap-1 rounded px-1.5 py-1 text-muted hover:bg-slate-100">
+                  <FolderInput size={15} />
+                  <select
+                    value=""
+                    disabled={actionBusy}
+                    onChange={(event) => {
+                      const target = event.target.value as MoveTarget
+                      if (target) {
+                        onAction?.('move', target)
+                      }
+                      event.target.value = ''
+                    }}
+                    aria-label={t('list.moveTo')}
+                    className="max-w-28 bg-transparent text-xs outline-none"
+                  >
+                    <option value="">{t('list.moveTo')}</option>
+                    <option value="inbox">{t('list.moveInbox')}</option>
+                    <option value="spam">{t('list.moveSpam')}</option>
+                    <option value="trash">{t('list.moveTrash')}</option>
+                  </select>
+                </label>
+              </div>
+            ) : (
+              <label className="ml-auto flex items-center gap-1.5 text-xs text-muted">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(element) => {
+                    if (element) {
+                      element.indeterminate = someSelected && !allSelected
+                    }
+                  }}
+                  onChange={() => onToggleSelectAll?.(allIds)}
+                  className="h-3.5 w-3.5 shrink-0"
+                />
+                {t('list.selectAll')}
               </label>
-            </div>
+            )}
           </>
         ) : (
           <>
-            {canSelect ? (
+            {canSelect && !isMobile ? (
               <input
                 type="checkbox"
                 checked={allSelected}
@@ -192,7 +394,7 @@ export function MailList({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-20 md:pb-0">
-        {loading ? (
+        {loading && messages.length === 0 ? (
           <div className="space-y-3 p-4">
             {[0, 1, 2, 3].map((item) => (
               <div key={item} className="animate-pulse space-y-2">
@@ -218,23 +420,15 @@ export function MailList({
               .map((id) => labels.find((item) => item.id === id))
               .filter((item): item is Label => Boolean(item))
             const checked = selectedSet.has(message.id)
+            const showCheckbox = canSelect && (!isMobile || selectMode)
+            const offset = swipe?.id === message.id ? swipe.dx : 0
+            const deleteVisible = offset < -10
+            const rightVisible = offset > 10
             return (
               <div
-                role="button"
-                tabIndex={0}
                 key={message.id}
-                onClick={() => onSelect(message.id)}
-                onKeyDown={(event) => {
-                  if (event.target !== event.currentTarget) {
-                    return
-                  }
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    onSelect(message.id)
-                  }
-                }}
                 className={cn(
-                  'grid w-full cursor-pointer grid-cols-[auto_auto_1fr_auto] items-start gap-2 border-b border-line/80 px-3 py-2.5 text-left transition sm:gap-3 sm:px-4',
+                  'relative overflow-hidden border-b border-line/80',
                   checked
                     ? 'bg-brand-soft/70'
                     : selectedId === message.id
@@ -242,89 +436,154 @@ export function MailList({
                       : message.unread
                         ? 'bg-white'
                         : 'bg-slate-50/60',
-                  'hover:bg-slate-100 focus:bg-slate-100 focus:outline-none',
                 )}
               >
-                <span
-                  className="mt-2 flex items-center"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  {canSelect ? (
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => onToggleSelect?.(message.id)}
-                      aria-label={message.subject || t('list.noSubject')}
-                      className="h-3.5 w-3.5"
-                    />
-                  ) : null}
-                </span>
-                <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-[11px] font-semibold text-slate-600">
-                  {initials(label)}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    {message.unread ? (
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-brand" />
-                    ) : null}
-                    <p
+                {isMobile ? (
+                  <div className="pointer-events-none absolute inset-0 flex items-stretch justify-between text-xs font-medium">
+                    <div
                       className={cn(
-                        'truncate text-sm',
-                        message.unread ? 'font-semibold' : 'font-medium',
+                        'flex flex-1 items-center gap-1.5 bg-emerald-50 px-4 text-emerald-700 transition-opacity',
+                        rightVisible ? 'opacity-100' : 'opacity-0',
                       )}
                     >
-                      {message.folder === 'inbox' || message.folder === 'spam'
-                        ? label
-                        : t('list.to', { value: label })}
+                      {rightAction?.action === 'move' ? (
+                        <Inbox size={16} />
+                      ) : (
+                        <ShieldAlert size={16} />
+                      )}
+                      {rightAction?.action === 'move'
+                        ? t('list.moveInbox')
+                        : t('list.spamAction')}
+                    </div>
+                    <div
+                      className={cn(
+                        'flex flex-1 items-center justify-end gap-1.5 bg-red-50 px-4 text-brand-strong transition-opacity',
+                        deleteVisible ? 'opacity-100' : 'opacity-0',
+                      )}
+                    >
+                      <Trash2 size={16} />
+                      {t('list.delete')}
+                    </div>
+                  </div>
+                ) : null}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleRowClick(message)}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) {
+                      return
+                    }
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      onSelect(message.id)
+                    }
+                  }}
+                  onPointerDown={(event) => handlePointerDown(event, message)}
+                  onPointerMove={(event) => handlePointerMove(event, message)}
+                  onPointerUp={() => handlePointerUp(message)}
+                  onPointerCancel={() => {
+                    const gesture = gestureRef.current
+                    if (gesture) {
+                      cancelLongPress(gesture)
+                    }
+                    gestureRef.current = null
+                    setSwipe(null)
+                  }}
+                  style={{
+                    transform: offset === 0 ? undefined : `translate3d(${offset}px, 0, 0)`,
+                    touchAction: 'pan-y',
+                    transition:
+                      swipe?.id === message.id ? 'none' : 'transform 180ms ease',
+                  }}
+                  className={cn(
+                    'grid w-full cursor-pointer items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-100 focus:bg-slate-100 focus:outline-none sm:gap-3 sm:px-4',
+                    showCheckbox
+                      ? 'grid-cols-[auto_auto_1fr_auto]'
+                      : 'grid-cols-[auto_1fr_auto]',
+                  )}
+                >
+                  {showCheckbox ? (
+                    <span
+                      className="mt-2 flex items-center"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => onToggleSelect?.(message.id)}
+                        aria-label={message.subject || t('list.noSubject')}
+                        className="h-3.5 w-3.5"
+                      />
+                    </span>
+                  ) : null}
+                  <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-[11px] font-semibold text-slate-600">
+                    {initials(label)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      {message.unread ? (
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-brand" />
+                      ) : null}
+                      <p
+                        className={cn(
+                          'truncate text-sm',
+                          message.unread ? 'font-semibold' : 'font-medium',
+                        )}
+                      >
+                        {message.folder === 'inbox' || message.folder === 'spam'
+                          ? label
+                          : t('list.to', { value: label })}
+                      </p>
+                      {labelName || showFolder ? (
+                        <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                          {folderName(message.folder, t)}
+                        </span>
+                      ) : null}
+                      {message.status === 'failed' ? (
+                        <span className="flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-strong">
+                          <AlertCircle size={11} /> {t('list.notSent')}
+                        </span>
+                      ) : null}
+                      {message.status === 'draft' ? (
+                        <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          {t('list.draft')}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="truncate text-sm">
+                      <span className={cn('text-slate-700', message.unread && 'font-medium')}>
+                        {message.subject || t('list.noSubject')}
+                      </span>
+                      {messageLabels.slice(0, 2).map((item) => (
+                        <span
+                          key={item.id}
+                          className={cn(
+                            'ml-1.5 inline-block rounded px-1.5 py-0.5 align-middle text-[10px] font-medium',
+                            labelStyle(item.color),
+                          )}
+                        >
+                          {item.name}
+                        </span>
+                      ))}
+                      {messageLabels.length > 2 ? (
+                        <span className="ml-1 text-[10px] text-muted">
+                          +{messageLabels.length - 2}
+                        </span>
+                      ) : null}
+                      {message.snippet ? (
+                        <span className="text-muted"> — {message.snippet}</span>
+                      ) : null}
                     </p>
-                    {labelName ? (
-                      <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-muted">
-                        {folderName(message.folder, t)}
-                      </span>
-                    ) : null}
-                    {message.status === 'failed' ? (
-                      <span className="flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-strong">
-                        <AlertCircle size={11} /> {t('list.notSent')}
-                      </span>
-                    ) : null}
-                    {message.status === 'draft' ? (
-                      <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                        {t('list.draft')}
+                  </div>
+                  <div className="flex flex-col items-end gap-1 text-[11px] text-muted">
+                    <span>{formatDate(message.date, locale)}</span>
+                    {message.hasAttachments ? (
+                      <span className="flex items-center gap-0.5">
+                        <Paperclip size={12} />
                       </span>
                     ) : null}
                   </div>
-                  <p className="truncate text-sm">
-                    <span className={cn('text-slate-700', message.unread && 'font-medium')}>
-                      {message.subject || t('list.noSubject')}
-                    </span>
-                    {messageLabels.slice(0, 2).map((item) => (
-                      <span
-                        key={item.id}
-                        className={cn(
-                          'ml-1.5 inline-block rounded px-1.5 py-0.5 align-middle text-[10px] font-medium',
-                          labelStyle(item.color),
-                        )}
-                      >
-                        {item.name}
-                      </span>
-                    ))}
-                    {messageLabels.length > 2 ? (
-                      <span className="ml-1 text-[10px] text-muted">
-                        +{messageLabels.length - 2}
-                      </span>
-                    ) : null}
-                    {message.snippet ? (
-                      <span className="text-muted"> — {message.snippet}</span>
-                    ) : null}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-1 text-[11px] text-muted">
-                  <span>{formatDate(message.date, locale)}</span>
-                  {message.hasAttachments ? (
-                    <span className="flex items-center gap-0.5">
-                      <Paperclip size={12} />
-                    </span>
-                  ) : null}
                 </div>
               </div>
             )

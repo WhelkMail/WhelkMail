@@ -4,6 +4,10 @@ import { isSchemaError } from './schema'
 
 const CACHE_TTL_MS = 3 * 24 * 60 * 60 * 1000
 export const MAX_CACHED_BODY_BYTES = 512 * 1024
+export const MAX_CACHE_BYTES = 64 * 1024 * 1024
+const CLEANUP_WRITE_INTERVAL = 50
+const EVICTION_BATCH = 100
+const MAX_EVICTION_PASSES = 5
 let cacheAvailable: boolean | null = null
 let writesSinceCleanup = 0
 
@@ -87,7 +91,7 @@ export async function putCachedBody(
       .run()
     cacheAvailable = true
     writesSinceCleanup += 1
-    if (writesSinceCleanup >= 50) {
+    if (writesSinceCleanup >= CLEANUP_WRITE_INTERVAL) {
       writesSinceCleanup = 0
       void cleanupBodyCache(env).catch(() => undefined)
     }
@@ -104,15 +108,83 @@ export function bodyCacheAvailable(): boolean {
   return cacheAvailable !== false
 }
 
+async function cacheBytes(env: Env): Promise<number> {
+  const row = await env.DB.prepare(
+    'SELECT COALESCE(SUM(size), 0) AS total FROM imap_body_cache',
+  ).first<{ total: number }>()
+  return row?.total ?? 0
+}
+
+async function evictOldest(env: Env, limit: number): Promise<number> {
+  const result = await env.DB.prepare(
+    `DELETE FROM imap_body_cache WHERE message_id IN (
+       SELECT message_id FROM imap_body_cache
+       ORDER BY cached_at ASC
+       LIMIT ?
+     )`,
+  )
+    .bind(limit)
+    .run()
+  return result.meta.changes ?? 0
+}
+
 export async function cleanupBodyCache(env: Env): Promise<void> {
   if (cacheAvailable === false) {
     return
   }
   try {
-    await env.DB.prepare('DELETE FROM imap_body_cache WHERE cached_at < ?')
+    const expired = await env.DB.prepare('DELETE FROM imap_body_cache WHERE cached_at < ?')
       .bind(new Date(Date.now() - CACHE_TTL_MS).toISOString())
       .run()
+    let totalBytes = await cacheBytes(env)
+    let evicted = 0
+
+    if (totalBytes > MAX_CACHE_BYTES) {
+      try {
+        const result = await env.DB.prepare(
+          `DELETE FROM imap_body_cache WHERE message_id IN (
+             SELECT message_id FROM (
+               SELECT message_id,
+                 SUM(size) OVER (
+                   ORDER BY cached_at ASC
+                   ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                 ) AS running
+               FROM imap_body_cache
+             )
+             WHERE running > ?
+           )`,
+        )
+          .bind(MAX_CACHE_BYTES)
+          .run()
+        evicted += result.meta.changes ?? 0
+      } catch (error) {
+        if (isSchemaError(error)) {
+          cacheAvailable = false
+          return
+        }
+        console.log('[body-cache] window eviction failed, using batches')
+      }
+      totalBytes = await cacheBytes(env)
+    }
+
+    let passes = 0
+    while (totalBytes > MAX_CACHE_BYTES && passes < MAX_EVICTION_PASSES) {
+      const removed = await evictOldest(env, EVICTION_BATCH)
+      if (removed === 0) {
+        break
+      }
+      evicted += removed
+      totalBytes = await cacheBytes(env)
+      passes += 1
+    }
+
     cacheAvailable = true
+    const expiredCount = expired.meta.changes ?? 0
+    if (expiredCount > 0 || evicted > 0 || totalBytes > MAX_CACHE_BYTES) {
+      console.log(
+        `[body-cache] cleanup expired=${expiredCount} evicted=${evicted} bytes=${totalBytes} max=${MAX_CACHE_BYTES}`,
+      )
+    }
   } catch (error) {
     if (isSchemaError(error)) {
       cacheAvailable = false

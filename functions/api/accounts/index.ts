@@ -2,6 +2,7 @@ import { accountCreateSchema } from '../../../shared/schemas'
 import { findPreset, findRelayProvider } from '../../../shared/presets'
 import { encryptString } from '../../_lib/crypto'
 import { getAccountRow, listAccountRows, publicAccount } from '../../_lib/db'
+import { backfillAccountLabel } from '../../_lib/filters'
 import type { Env } from '../../_lib/env'
 import { ensureGlobalLabel } from '../../_lib/labels'
 import { googleMailConfigured } from '../../_lib/google/oauth'
@@ -101,11 +102,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     if (!providerMeta) {
       return fail('Unsupported relay provider', 400, undefined, 'relay_provider_unsupported')
     }
+    const customSmtp = provider === 'custom'
+    if (customSmtp && !input.smtpHost) {
+      return fail('Hosts are required', 400, undefined, 'hosts_required')
+    }
+    const smtpPort = customSmtp ? (input.smtpPort ?? 465) : null
+    const smtpSecurity = customSmtp ? (input.smtpSecurity ?? 'tls') : null
+    const username = customSmtp ? (input.username ?? input.email) : null
     const apiKey =
       input.relayApiKey ??
       context.env.RELAY_API_KEY ??
       (provider === 'smtp2go' ? context.env.SMTP2GO_API_KEY : undefined)
-    if (!apiKey) {
+    if (!apiKey && !customSmtp) {
       return fail('Relay API key is required', 400, undefined, 'relay_key_required')
     }
     if (providerMeta.needsSecret && !input.relayApiSecret) {
@@ -114,13 +122,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     if (providerMeta.needsDomain && !input.relayDomain) {
       return fail('Mailgun domain is required', 400, undefined, 'relay_domain_required')
     }
-    const keyEncrypted = await encryptString(context.env, apiKey)
+    const keyEncrypted = apiKey ? await encryptString(context.env, apiKey) : null
     const secretEncrypted = input.relayApiSecret
       ? await encryptString(context.env, input.relayApiSecret)
       : null
     await context.env.DB.prepare(
-      `INSERT INTO accounts (id, email, display_name, kind, auth_type, sent_folder, auto_saves_sent, max_attachment_bytes, storage_driver, relay_provider, relay_api_key_enc, relay_api_secret_enc, relay_domain, relay_region, created_at)
-       VALUES (?, ?, ?, 'relay', 'none', 'Sent', 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO accounts (id, email, display_name, kind, auth_type, sent_folder, auto_saves_sent, max_attachment_bytes, storage_driver, relay_provider, relay_api_key_enc, relay_api_secret_enc, relay_domain, relay_region, smtp_host, smtp_port, smtp_security, username, created_at)
+       VALUES (?, ?, ?, 'relay', 'none', 'Sent', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         id,
@@ -133,6 +141,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         secretEncrypted,
         input.relayDomain ?? null,
         input.relayRegion ?? null,
+        customSmtp ? (input.smtpHost ?? null) : null,
+        smtpPort,
+        smtpSecurity,
+        username,
         createdAt,
       )
       .run()
@@ -144,6 +156,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       await context.env.DB.prepare('UPDATE accounts SET incoming_label_id = ? WHERE id = ?')
         .bind(labelId, id)
         .run()
+      await backfillAccountLabel(context.env, id, labelId)
     } catch (error) {
       if (!isSchemaError(error)) {
         throw error

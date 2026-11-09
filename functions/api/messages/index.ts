@@ -11,7 +11,6 @@ import { fail, json } from '../../_lib/http'
 import type { ImapHeader } from '../../_lib/imap/client'
 import { applyAccountLabel, applyFilters } from '../../_lib/filters'
 import { listFolder, listFolderByUids } from '../../_lib/mail/imap'
-import { prefetchMessageBodies } from '../../_lib/mail/prefetch'
 import { imapMessageId, parseImapMessageId, parseRelayMessageId } from '../../_lib/mail/ids'
 import { dateOf, parseHeaders, toMailbox, toMailboxes } from '../../_lib/mail/parse'
 import { isSchemaError } from '../../_lib/schema'
@@ -269,7 +268,7 @@ async function loadByLabel(
   return { messages, errors }
 }
 
-const SYNC_TTL_MS = 60_000
+const SYNC_TTL_MS = 5 * 60_000
 const BACKFILL_RETRY_MS = 8_000
 const syncInFlight = new Set<string>()
 
@@ -360,9 +359,9 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     try {
       let loaded: MessageSummary[]
       let needSync = false
+      let syncState: MailboxSyncState | null = null
       if (account.kind === 'imap') {
         let mirrored: MessageSummary[] = []
-        let syncState: MailboxSyncState | null = null
         const mirrorStartedAt = Date.now()
         try {
           mirrored = await listMirrorMessages(context.env, account, folder)
@@ -374,39 +373,20 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         }
         mirrorMs = Date.now() - mirrorStartedAt
 
-        if (mirrored.length > 0) {
-          loaded = mirrored
-          needSync = needsBackgroundSync(syncState)
-        } else if (syncState && syncState.status === 'done' && syncState.synced === 0) {
-          loaded = []
-          needSync = needsBackgroundSync(syncState)
-        } else {
-          // Bootstrap the D1 mirror with a single blocking sync chunk instead
-          // of opening a second IMAP connection for a separate live read.
+        if (!syncState && mirrored.length === 0) {
+          // First visit to this folder: bootstrap a single sync chunk so the
+          // list is not empty on the very first open. This only happens once.
           const bootstrapStartedAt = Date.now()
           try {
             const result = await runSyncChunk(context.env, account, folder)
             const rereadStartedAt = Date.now()
             mirrored = await listMirrorMessages(context.env, account, folder)
             mirrorMs += Date.now() - rereadStartedAt
-            needSync = false
-            if (result.hasMore) {
-              syncing = true
-            }
-            if (mirrored.length === 0) {
-              // Another worker may have held the lock, or the mailbox may be
-              // empty. Only read from IMAP if the folder has not completed a sync.
-              const stateAfter = await getSyncState(context.env, account.id, folder)
-              loaded =
-                stateAfter?.status === 'done'
-                  ? []
-                  : await summariesFromImap(context.env, account, folder)
-              if (stateAfter?.status === 'partial') {
-                syncing = true
-              }
-            } else {
-              loaded = mirrored
-            }
+            loaded =
+              mirrored.length > 0
+                ? mirrored
+                : await summariesFromImap(context.env, account, folder)
+            syncing = result.hasMore
           } catch (error) {
             await markSyncError(
               context.env,
@@ -415,18 +395,24 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
               error instanceof Error ? error.message : String(error),
             ).catch(() => undefined)
             loaded = await summariesFromImap(context.env, account, folder)
-            needSync = false
           }
           liveMs = Date.now() - bootstrapStartedAt
-        }
-
-        if (syncState?.status === 'partial') {
-          syncing = true
-        }
-
-        if (needSync) {
-          syncing = true
-          context.waitUntil(runBackgroundSync(context.env, account, folder))
+        } else {
+          // Fast path: serve the D1 mirror and never block the request on IMAP.
+          // The sync runs in the background and the client polls while syncing.
+          loaded = mirrored
+          needSync = needsBackgroundSync(syncState)
+          if (needSync || syncState?.status === 'partial') {
+            syncing = true
+            context.waitUntil(runBackgroundSync(context.env, account, folder))
+          }
+          if (loaded.length === 0 && syncState?.error) {
+            errors.push({
+              accountId: account.id,
+              email: account.email,
+              message: syncState.error,
+            })
+          }
         }
       } else {
         loaded = await summariesFromRelay(context.env, account, folder)
@@ -436,30 +422,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       await applyFilters(context.env, account.id, loaded)
       await applyAccountLabel(context.env, account.id, account.incoming_label_id, loaded)
       messages.push(...loaded)
-      if (
-        account.kind === 'imap' &&
-        loaded.length > 0 &&
-        (accountId !== 'all' || account.id === accounts[0]?.id)
-      ) {
-        const maxPrefetch = accountId === 'all' ? 1 : 3
-        const prefetchIds = [...loaded]
-          .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
-          .slice(0, maxPrefetch)
-          .map((message) => message.id)
-        if (prefetchIds.length > 0) {
-          context.waitUntil(
-            prefetchMessageBodies(
-              context.env,
-              account,
-              folder,
-              prefetchIds,
-              prefetchIds.length,
-            ).catch(() => undefined),
-          )
-        }
-      }
       console.log(
-        `[messages] ${account.id}/${folder} mirror=${mirrorMs}ms live=${liveMs}ms labels=${Date.now() - accountStartedAt - mirrorMs - liveMs}ms sync=${needSync}`,
+        `[messages] ${account.id}/${folder} mirror=${mirrorMs}ms live=${liveMs}ms labels=${Date.now() - accountStartedAt - mirrorMs - liveMs}ms sync=${needSync || syncState?.status === 'partial'}`,
       )
     } catch (error) {
       errors.push({

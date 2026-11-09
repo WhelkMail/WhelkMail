@@ -18,7 +18,7 @@ import { isSchemaError } from './schema'
 export const SYNC_FOLDERS: Folder[] = ['inbox', 'sent', 'draft', 'spam']
 const CHUNK_SIZE = 40
 const BACKFILL_WINDOW = 400
-const FLAG_WINDOW = 300
+const FLAG_WINDOW = 120
 
 export interface SyncRow {
   account_id: string
@@ -413,6 +413,7 @@ const SYNC_LOCK_TTL_MS = 5 * 60 * 1000
 
 interface SyncLock {
   expiresAt: number
+  owner: string | null
 }
 
 async function acquireSyncLock(
@@ -423,19 +424,46 @@ async function acquireSyncLock(
   const key = `${accountId}:${folder}`
   const now = Date.now()
   const expiresAt = now + SYNC_LOCK_TTL_MS
+  const owner = crypto.randomUUID()
   try {
     const result = await env.DB.prepare(
-      `INSERT INTO imap_sync_locks (lock_key, expires_at) VALUES (?, ?)
-       ON CONFLICT(lock_key) DO UPDATE SET expires_at = excluded.expires_at
+      `INSERT INTO imap_sync_locks (lock_key, expires_at, owner) VALUES (?, ?, ?)
+       ON CONFLICT(lock_key) DO UPDATE SET expires_at = excluded.expires_at, owner = excluded.owner
        WHERE imap_sync_locks.expires_at < ?`,
     )
-      .bind(key, expiresAt, now)
+      .bind(key, expiresAt, owner, now)
       .run()
-    return (result.meta.changes ?? 0) > 0 ? { expiresAt } : null
+    return (result.meta.changes ?? 0) > 0 ? { expiresAt, owner } : null
   } catch (error) {
     if (isSchemaError(error)) {
-      // Older databases may not have the lock table; run unlocked.
-      return { expiresAt: 0 }
+      // Older databases may not have the lock table or owner column; run unlocked.
+      return { expiresAt: 0, owner: null }
+    }
+    throw error
+  }
+}
+
+async function renewSyncLock(
+  env: Env,
+  accountId: string,
+  folder: Folder,
+  lock: SyncLock,
+): Promise<void> {
+  if (!lock.owner) {
+    return
+  }
+  try {
+    const result = await env.DB.prepare(
+      'UPDATE imap_sync_locks SET expires_at = ? WHERE lock_key = ? AND owner = ?',
+    )
+      .bind(Date.now() + SYNC_LOCK_TTL_MS, `${accountId}:${folder}`, lock.owner)
+      .run()
+    if ((result.meta.changes ?? 0) === 0) {
+      throw new Error('Sync lock lost to another worker')
+    }
+  } catch (error) {
+    if (isSchemaError(error)) {
+      return
     }
     throw error
   }
@@ -447,17 +475,29 @@ async function releaseSyncLock(
   folder: Folder,
   lock: SyncLock,
 ): Promise<void> {
-  if (lock.expiresAt === 0) {
+  if (!lock.owner) {
     return
   }
   try {
     await env.DB.prepare(
-      'DELETE FROM imap_sync_locks WHERE lock_key = ? AND expires_at = ?',
+      'DELETE FROM imap_sync_locks WHERE lock_key = ? AND owner = ?',
     )
-      .bind(`${accountId}:${folder}`, lock.expiresAt)
+      .bind(`${accountId}:${folder}`, lock.owner)
       .run()
   } catch {
     // The lock expires on its own; release is best effort.
+  }
+}
+
+export async function cleanupExpiredSyncLocks(env: Env): Promise<void> {
+  try {
+    await env.DB.prepare('DELETE FROM imap_sync_locks WHERE expires_at < ?')
+      .bind(Date.now())
+      .run()
+  } catch (error) {
+    if (!isSchemaError(error)) {
+      throw error
+    }
   }
 }
 
@@ -474,7 +514,7 @@ export async function runSyncChunk(
     return { folders, hasMore: current ? current.status === 'partial' : false }
   }
   try {
-    return await runSyncChunkLocked(env, account, folder)
+    return await runSyncChunkLocked(env, account, folder, lock)
   } finally {
     await releaseSyncLock(env, account.id, folder, lock)
   }
@@ -484,6 +524,7 @@ async function runSyncChunkLocked(
   env: Env,
   account: AccountRow,
   folder: Folder,
+  lock: SyncLock,
 ): Promise<{ folders: MailboxSyncState[]; hasMore: boolean }> {
   const row = await env.DB.prepare(
     'SELECT * FROM imap_sync WHERE account_id = ? AND folder = ?',
@@ -503,6 +544,7 @@ async function runSyncChunkLocked(
   const syncStartedAt = Date.now()
 
   await withImap(env, account, async (connection) => {
+    await renewSyncLock(env, account.id, folder, lock)
     const target = await resolveFolderName(env, connection, account, folder)
     let details
     try {
@@ -542,6 +584,13 @@ async function runSyncChunkLocked(
       maxUid = 0
       minUid = 0
       backfillDone = false
+    }
+
+    if (backfillDone && details.exists !== null && row && row.synced < details.exists) {
+      backfillDone = false
+      console.log(
+        `[sync] ${account.id}/${folder} resuming incomplete backfill mirror=${row.synced} total=${details.exists}`,
+      )
     }
 
     let uidsToFetch: number[] = []
@@ -660,16 +709,20 @@ async function runSyncChunkLocked(
           account.id,
           parsed.map((item) => ({ id: item.id, stableKey: item.stableKey, folder })),
         )
+        const summaries = parsed.map((item) => imapMessageSummary(item.row, account))
         if (folder === 'inbox') {
-          const summaries = parsed.map((item) => imapMessageSummary(item.row, account))
           await applyFilters(env, account.id, summaries)
-          await applyAccountLabel(env, account.id, account.incoming_label_id, summaries)
         }
+        await applyAccountLabel(env, account.id, account.incoming_label_id, summaries)
       }
 
       if (archiveStorage && parsed.length > 0) {
+        await renewSyncLock(env, account.id, folder, lock)
         const updates: D1PreparedStatement[] = []
-        for (const item of parsed) {
+        for (const [index, item] of parsed.entries()) {
+          if (index > 0 && index % 4 === 0) {
+            await renewSyncLock(env, account.id, folder, lock)
+          }
           try {
             const bytes = await connection.fetchFull(item.header.uid)
             const key = `imap/${account.id}/${folder}/${details.uidValidity ?? 0}/${folder}-${item.header.uid}.eml`
@@ -700,13 +753,17 @@ async function runSyncChunkLocked(
     }
 
     if (archiveStorage) {
+      await renewSyncLock(env, account.id, folder, lock)
       const pending = await env.DB.prepare(
         'SELECT id, uid FROM imap_messages WHERE account_id = ? AND folder = ? AND archived = 0 ORDER BY uid ASC LIMIT ?',
       )
         .bind(account.id, folder, chunkSize)
         .all<{ id: string; uid: number }>()
       const updates: D1PreparedStatement[] = []
-      for (const item of pending.results) {
+      for (const [index, item] of pending.results.entries()) {
+        if (index > 0 && index % 4 === 0) {
+          await renewSyncLock(env, account.id, folder, lock)
+        }
         try {
           const bytes = await connection.fetchFull(item.uid)
           const key = `imap/${account.id}/${folder}/${details.uidValidity ?? 0}/${folder}-${item.uid}.eml`
@@ -733,6 +790,7 @@ async function runSyncChunkLocked(
     }
 
     if (maxUid > 0) {
+      await renewSyncLock(env, account.id, folder, lock)
       const flagStart = Math.max(1, maxUid - FLAG_WINDOW)
       const flagUids = await connection.searchUids(`${flagStart}:${maxUid}`)
       const flags = await connection.fetchFlags(flagUids)
@@ -758,7 +816,7 @@ async function runSyncChunkLocked(
       } else {
         try {
           const lowest = await connection.firstUid()
-          if (lowest === null || lowest >= minUid) {
+          if (lowest !== null && lowest >= minUid) {
             backfillDone = true
           } else {
             hasOlder = true
@@ -783,6 +841,7 @@ async function runSyncChunkLocked(
     if (!hasMore) {
       const needsPrune = details.exists === null || details.exists !== synced
       if (needsPrune) {
+        await renewSyncLock(env, account.id, folder, lock)
         const currentUids = (await connection.searchAll()).sort((left, right) => left - right)
         if (currentUids.length > 0 || synced > 0) {
           await pruneFolder(

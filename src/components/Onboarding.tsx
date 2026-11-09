@@ -51,6 +51,10 @@ export function Onboarding({ storage, health, busy, error, onCancel, onCreate }:
   const [relayApiSecret, setRelayApiSecret] = useState('')
   const [relayDomain, setRelayDomain] = useState('')
   const [relayRegion, setRelayRegion] = useState('us')
+  const [relaySmtpHost, setRelaySmtpHost] = useState('')
+  const [relaySmtpPort, setRelaySmtpPort] = useState('465')
+  const [relaySmtpSecurity, setRelaySmtpSecurity] = useState<MailSecurity>('tls')
+  const [relayUsername, setRelayUsername] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
 
   const preset = findPreset(presetId) ?? initial
@@ -128,7 +132,11 @@ export function Onboarding({ storage, health, busy, error, onCancel, onCreate }:
       return
     }
 
-    if (!relayApiKey) {
+    if (relayMeta?.manual && (!relaySmtpHost.trim() || !relaySmtpPort.trim())) {
+      setLocalError(t('onboarding.hostsRequired'))
+      return
+    }
+    if (!relayApiKey && !relayMeta?.manual) {
       setLocalError(t('onboarding.relayKeyRequired'))
       return
     }
@@ -146,10 +154,14 @@ export function Onboarding({ storage, health, busy, error, onCancel, onCreate }:
       displayName,
       storageDriver: relayStorage === 'r2' ? 'r2' : 'drive',
       relayProvider,
-      relayApiKey,
+      relayApiKey: relayApiKey || undefined,
       relayApiSecret: relayApiSecret || undefined,
       relayDomain: relayDomain || undefined,
       relayRegion: relayRegion === 'eu' ? 'eu' : 'us',
+      smtpHost: relayMeta?.manual ? relaySmtpHost.trim() || undefined : undefined,
+      smtpPort: relayMeta?.manual ? Number(relaySmtpPort) : undefined,
+      smtpSecurity: relayMeta?.manual ? relaySmtpSecurity : undefined,
+      username: relayMeta?.manual ? relayUsername.trim() || email : undefined,
       incomingLabelName: incomingLabelName.trim() || undefined,
     })
   }
@@ -439,7 +451,9 @@ export function Onboarding({ storage, health, busy, error, onCancel, onCreate }:
                   </select>
                 </label>
                 <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-muted">{t('onboarding.relayApiKey')}</span>
+                  <span className="mb-1 block font-medium text-muted">
+                    {relayMeta?.manual ? t('onboarding.relayPassword') : t('onboarding.relayApiKey')}
+                  </span>
                   <input
                     type="password"
                     value={relayApiKey}
@@ -447,6 +461,60 @@ export function Onboarding({ storage, health, busy, error, onCancel, onCreate }:
                     className="w-full rounded-lg border border-line px-3 py-2 outline-none focus:border-brand"
                   />
                 </label>
+                {relayMeta?.manual ? (
+                  <>
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-muted">
+                        {t('onboarding.smtpHost')}
+                      </span>
+                      <input
+                        value={relaySmtpHost}
+                        onChange={(event) => setRelaySmtpHost(event.target.value)}
+                        placeholder="smtp.esempio.it"
+                        className="w-full rounded-lg border border-line px-3 py-2 outline-none focus:border-brand"
+                      />
+                    </label>
+                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                      <label className="block text-sm">
+                        <span className="mb-1 block font-medium text-muted">
+                          {t('onboarding.smtpPort')}
+                        </span>
+                        <input
+                          value={relaySmtpPort}
+                          onChange={(event) => setRelaySmtpPort(event.target.value)}
+                          inputMode="numeric"
+                          className="w-full rounded-lg border border-line px-3 py-2 outline-none focus:border-brand"
+                        />
+                      </label>
+                      <label className="block text-sm">
+                        <span className="mb-1 block font-medium text-muted">
+                          {t('onboarding.smtpSecurity')}
+                        </span>
+                        <select
+                          value={relaySmtpSecurity}
+                          onChange={(event) =>
+                            setRelaySmtpSecurity(event.target.value as MailSecurity)
+                          }
+                          className="rounded-lg border border-line px-3 py-2 outline-none"
+                        >
+                          <option value="tls">TLS</option>
+                          <option value="starttls">STARTTLS</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className="block text-sm sm:col-span-2">
+                      <span className="mb-1 block font-medium text-muted">
+                        {t('onboarding.relayUsername')}
+                      </span>
+                      <input
+                        value={relayUsername}
+                        onChange={(event) => setRelayUsername(event.target.value)}
+                        placeholder={email || 'nomeutente'}
+                        className="w-full rounded-lg border border-line px-3 py-2 outline-none focus:border-brand"
+                      />
+                    </label>
+                  </>
+                ) : null}
                 {relayMeta?.needsSecret ? (
                   <label className="block text-sm">
                     <span className="mb-1 block font-medium text-muted">{t('onboarding.relayApiSecret')}</span>

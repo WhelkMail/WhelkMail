@@ -8,6 +8,7 @@ import { forwardFilteredMessage } from '../../_lib/forward'
 import { fail, json } from '../../_lib/http'
 import { pushConfigured, sendWebPush, type PushSubscriptionRecord } from '../../_lib/push'
 import {
+  cleanupExpiredSyncLocks,
   imapMessageSummary,
   markSyncError,
   runSyncChunk,
@@ -118,8 +119,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         .all<ImapMessageRow>()
 
       for (const row of fresh.results) {
+        const summary = imapMessageSummary(row, account)
         if (folder === 'inbox') {
-          const summary = imapMessageSummary(row, account)
           const existingLabels = await context.env.DB.prepare(
             'SELECT label_id FROM message_labels WHERE message_id = ?',
           )
@@ -127,12 +128,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             .all<{ label_id: string }>()
           summary.labelIds = existingLabels.results.map((item) => item.label_id)
           const forwards = await applyFilters(context.env, account.id, [summary])
-          await applyAccountLabel(
-            context.env,
-            account.id,
-            account.incoming_label_id,
-            [summary],
-          )
 
           for (const match of forwards) {
             const result = await forwardFilteredMessage(
@@ -154,6 +149,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             }
           }
         }
+
+        await applyAccountLabel(
+          context.env,
+          account.id,
+          account.incoming_label_id,
+          [summary],
+        )
 
         if (notify && notifyEnabled && pushFolders.has(folder)) {
           const title = row.from_name || row.from_email || account.display_name
@@ -202,6 +204,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   await cleanupBodyCache(context.env).catch(() => undefined)
+  await cleanupExpiredSyncLocks(context.env).catch(() => undefined)
 
   if (gone.size > 0) {
     await context.env.DB.batch(

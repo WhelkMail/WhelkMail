@@ -1,7 +1,9 @@
 import { decryptString } from '../crypto'
 import type { AccountRow } from '../db'
 import type { Env } from '../env'
+import type { SmtpSecurity } from '../smtp/client'
 import { BrevoRelay } from './brevo'
+import { CustomSmtpRelay } from './custom'
 import { MailgunRelay } from './mailgun'
 import { MailjetRelay } from './mailjet'
 import { PostmarkRelay } from './postmark'
@@ -20,6 +22,7 @@ const LABELS: Record<string, string> = {
   sendgrid: 'SendGrid',
   mailjet: 'Mailjet',
   postmark: 'Postmark',
+  custom: 'SMTP personalizzato',
 }
 
 const MAX_ATTACHMENT_BYTES: Record<string, number> = {
@@ -30,6 +33,7 @@ const MAX_ATTACHMENT_BYTES: Record<string, number> = {
   sendgrid: 15 * 1024 * 1024,
   mailjet: 12 * 1024 * 1024,
   postmark: 15 * 1024 * 1024,
+  custom: 15 * 1024 * 1024,
 }
 
 export interface RelayInfo {
@@ -77,6 +81,19 @@ export async function getRelay(env: Env, account?: AccountRow): Promise<RelayAda
   }
   const domain = account?.relay_domain ?? env.MAILGUN_DOMAIN
   const region = account?.relay_region ?? env.MAILGUN_REGION ?? 'us'
+
+  if (provider === 'custom') {
+    if (!account?.smtp_host || !account.smtp_port || !account.smtp_security) {
+      throw new Error('Configurazione SMTP personalizzata mancante')
+    }
+    return new CustomSmtpRelay({
+      host: account.smtp_host,
+      port: account.smtp_port,
+      security: account.smtp_security as SmtpSecurity,
+      username: account.username ?? account.email,
+      password: key ?? '',
+    })
+  }
 
   if (!key) {
     throw new Error(`Chiave API relay non configurata per ${provider}`)
