@@ -11,7 +11,7 @@ WhelkMail is a **webmail client**, not a mail server.
 - It connects to existing mailboxes through IMAP and SMTP.
 - It does not receive mail directly, does not run an MTA, and does not listen on ports 25/143/993/465/587.
 - It does not create mailboxes. Thunderbird and mobile clients can keep connecting to the same provider independently.
-- For domains with no SMTP, a separate **relay account** type sends through an HTTP email API and archives sent copies/drafts on Google Drive or Cloudflare R2.
+- For domains with no SMTP, a separate **relay account** type sends through an HTTP email API and archives sent copies/drafts on Google Drive or Cloudflare R2; it can also append each sent message to the Sent folder of an IMAP account.
 
 ## 2. Architecture
 
@@ -69,7 +69,7 @@ Key constraints:
 3. **IMAP account:** authenticate and send through the account's own SMTP.
 4. If `auto_saves_sent` is false, the same MIME is appended to the provider's Sent folder (`\Sent`, fallback `Sent`).
 5. If `draftId` is present, the original draft is deleted.
-6. **Relay account:** store the `.eml` in Drive/R2, send through the selected HTTP relay, record metadata in D1.
+6. **Relay account:** store the `.eml` in Drive/R2, send through the selected HTTP relay, record metadata in D1, then append the same MIME to the Sent folder of the IMAP account selected in `sent_copy_account_id` (if any). The append is best-effort: a failure is returned as a warning next to the successful send, and a Sent sync is queued for the target account.
 
 ### Drafts
 
@@ -116,6 +116,7 @@ Important fields:
 - `access_token_enc`, `access_token_expires_at`
 - `oauth_provider`: currently `microsoft`
 - `sent_folder`, `drafts_folder`, `spam_folder`, `auto_saves_sent`
+- `sent_copy_account_id`: optional IMAP account that receives a copy of every message sent from this relay account (relay accounts only)
 - `signature`: optional per-account signature, used only when `signature_mode` is `per_account`
 - `incoming_label_id`: optional shared label applied automatically to every incoming message of this account
 - `delete_after_archive`: opt-in provider cleanup; archived incoming messages are moved to the provider Trash

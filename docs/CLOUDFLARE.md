@@ -326,6 +326,7 @@ For send-only accounts:
 2. Verify the sending domain with the provider (SPF and DKIM).
 3. Copy the provider API key.
 4. Paste it in the account creation form or in Settings.
+5. Optional: in Settings → Accounts, pick an IMAP account under **Also append the sent copy to**. Every message sent from the relay account is then also appended to that mailbox's Sent folder, on top of the Drive/R2 archive.
 
 Supported providers: SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark.
 

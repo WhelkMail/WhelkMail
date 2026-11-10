@@ -17,6 +17,7 @@ import { LocaleToggle } from './LocaleToggle'
 import { WhelkLogo } from './WhelkLogo'
 
 interface OnboardingProps {
+  accounts: Account[]
   storage: StorageOptions
   health: HealthStatus | null
   busy: boolean
@@ -27,7 +28,7 @@ interface OnboardingProps {
 
 const DEFAULT_PRESET = 'gmail'
 
-export function Onboarding({ storage, health, busy, error, onCancel, onCreate }: OnboardingProps) {
+export function Onboarding({ accounts, storage, health, busy, error, onCancel, onCreate }: OnboardingProps) {
   const { t } = useI18n()
   const initial = findPreset(DEFAULT_PRESET) ?? MAIL_PRESETS[0]
   const [mode, setMode] = useState<'imap' | 'relay'>('imap')
@@ -46,6 +47,7 @@ export function Onboarding({ storage, health, busy, error, onCancel, onCreate }:
   const [autoSavesSent, setAutoSavesSent] = useState(initial.autoSavesSent)
   const [gmailOAuth, setGmailOAuth] = useState(health?.googleMailConfigured ?? false)
   const [relayStorage, setRelayStorage] = useState<StorageDriver>('drive')
+  const [relaySentCopyAccountId, setRelaySentCopyAccountId] = useState('')
   const [relayProvider, setRelayProvider] = useState('smtp2go')
   const [relayApiKey, setRelayApiKey] = useState('')
   const [relayApiSecret, setRelayApiSecret] = useState('')
@@ -59,6 +61,7 @@ export function Onboarding({ storage, health, busy, error, onCancel, onCreate }:
 
   const preset = findPreset(presetId) ?? initial
   const relayMeta = findRelayProvider(relayProvider)
+  const relaySentCopyTargets = accounts.filter((item) => item.kind === 'imap' && item.connected)
   const oauthProvider =
     mode === 'imap'
       ? presetId === 'gmail'
@@ -153,6 +156,7 @@ export function Onboarding({ storage, health, busy, error, onCancel, onCreate }:
       email,
       displayName,
       storageDriver: relayStorage === 'r2' ? 'r2' : 'drive',
+      sentCopyAccountId: relaySentCopyAccountId || undefined,
       relayProvider,
       relayApiKey: relayApiKey || undefined,
       relayApiSecret: relayApiSecret || undefined,
@@ -587,6 +591,31 @@ export function Onboarding({ storage, health, busy, error, onCancel, onCreate }:
                     </span>
                   </button>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-muted">
+                    {t('settings.sentCopyTarget')}
+                  </span>
+                  <select
+                    value={relaySentCopyAccountId}
+                    onChange={(event) => setRelaySentCopyAccountId(event.target.value)}
+                    className="w-full rounded-lg border border-line px-3 py-2 outline-none focus:border-brand"
+                  >
+                    <option value="">{t('settings.sentCopyTargetNone')}</option>
+                    {relaySentCopyTargets.map((target) => (
+                      <option key={target.id} value={target.id}>
+                        {target.displayName} — {target.email} · {target.sentFolder}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-xs text-muted">
+                    {relaySentCopyTargets.length > 0
+                      ? t('settings.sentCopyTargetHint')
+                      : t('onboarding.sentCopyTargetEmpty')}
+                  </span>
+                </label>
               </div>
             </>
           )}

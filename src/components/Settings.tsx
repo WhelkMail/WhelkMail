@@ -86,6 +86,7 @@ function ConfigBadge({ ok, label }: { ok: boolean; label: string }) {
 
 interface AccountCardProps {
   account: Account
+  accounts: Account[]
   labels: Label[]
   storage: StorageOptions
   busy: boolean
@@ -99,6 +100,7 @@ interface AccountCardProps {
 
 function AccountCard({
   account,
+  accounts,
   labels,
   storage,
   busy,
@@ -126,6 +128,9 @@ function AccountCard({
   const [relayRegion, setRelayRegion] = useState('us')
   const isImap = account.kind === 'imap'
   const relayMeta = findRelayProvider(relayProvider)
+  const sentCopyTargets = accounts.filter(
+    (item) => item.kind === 'imap' && item.id !== account.id && item.connected,
+  )
 
   async function saveConnection() {
     await onUpdate(account.id, {
@@ -551,6 +556,32 @@ function AccountCard({
           </div>
 
           <div className="mt-4 rounded-xl border border-line p-3">
+            <label className="block text-xs">
+              <span className="mb-1 block font-medium text-muted">
+                {t('settings.sentCopyTarget')}
+              </span>
+              <select
+                value={account.sentCopyAccountId ?? ''}
+                disabled={busy}
+                onChange={(event) =>
+                  void onUpdate(account.id, { sentCopyAccountId: event.target.value || null })
+                }
+                className="w-full rounded-lg border border-line bg-white px-2 py-1.5 text-xs outline-none disabled:opacity-50"
+              >
+                <option value="">{t('settings.sentCopyTargetNone')}</option>
+                {sentCopyTargets.map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.displayName} — {target.email} · {target.sentFolder}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="mt-1 block text-[11px] text-muted">
+              {t('settings.sentCopyTargetHint')}
+            </span>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-line p-3">
             <p className="mb-2 text-xs font-medium text-muted">{t('settings.relayProvider')}</p>
             <div className="grid gap-2 sm:grid-cols-2">
               <select
@@ -807,6 +838,7 @@ export function Settings({
               <AccountCard
                 key={account.id}
                 account={account}
+                accounts={accounts}
                 labels={labels}
                 storage={storage}
                 busy={busyId === account.id}

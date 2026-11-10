@@ -1213,6 +1213,7 @@ export default function App() {
   if (accounts.length === 0 || addingAccount) {
     return (
       <Onboarding
+        accounts={accounts}
         storage={storage}
         health={health}
         busy={onboardingBusy}

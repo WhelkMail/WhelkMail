@@ -49,7 +49,7 @@ Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a fam
 - Multiple accounts in one view, each with its own IMAP/SMTP servers and credentials.
 - Password, app-password, Google OAuth2 and Microsoft OAuth2 (XOAUTH2) authentication.
 - Sending through each account's own SMTP server.
-- Send-only "relay" accounts (SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark or a custom SMTP server with manual host/port/credentials) for domains without SMTP, with sent/draft archive on Drive or R2.
+- Send-only "relay" accounts (SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark or a custom SMTP server with manual host/port/credentials) for domains without SMTP, with sent/draft archive on Drive or R2, and the option to append every sent message to the Sent folder of an IMAP account you already read.
 - Optional archive and provider cleanup for IMAP: archive bodies and attachments, then move the original to the provider Trash.
 
 ### Organization

@@ -74,6 +74,36 @@ async function persistRelayMessage(input: PersistInput): Promise<MessageRow> {
   return row
 }
 
+/**
+ * Send-only accounts keep their sent copies on Drive/R2. Optionally the same
+ * message is appended to the Sent folder of an IMAP account, so the copy also
+ * shows up in a real mailbox the user already reads.
+ */
+async function copySentToImapAccount(
+  env: Env,
+  account: AccountRow,
+  mime: Uint8Array,
+  waitUntil: (promise: Promise<unknown>) => void,
+): Promise<string | undefined> {
+  const targetId = account.sent_copy_account_id
+  if (!targetId) {
+    return undefined
+  }
+  const target = await getAccountRow(env, targetId)
+  if (!target || target.kind !== 'imap') {
+    return undefined
+  }
+  try {
+    await appendToSent(env, target, mime)
+  } catch (error) {
+    return `Messaggio inviato, ma la copia in ${target.sent_folder || 'Sent'} di ${target.email} non è stata salvata: ${
+      error instanceof Error ? error.message : 'errore IMAP'
+    }`
+  }
+  await queueSync(env, target, 'sent', waitUntil).catch(() => undefined)
+  return undefined
+}
+
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const body = await readJson<unknown>(context.request)
   const parsed = sendSchema.safeParse(body)
@@ -289,7 +319,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     if (input.draftId) {
       await deleteDraftById(context.env, input.draftId).catch(() => undefined)
     }
-    return json({ ok: true, message: relayMessageSummary(row, account) }, 201)
+    const warning = await copySentToImapAccount(context.env, account, mime, (promise) =>
+      context.waitUntil(promise),
+    )
+    return json({ ok: true, message: relayMessageSummary(row, account), warning }, 201)
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'Invio fallito'
     await persistRelayMessage({

@@ -97,6 +97,27 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     if (input.storageDriver === 'r2' && !context.env.BUCKET) {
       return fail('R2 is not configured on this deployment', 400, undefined, 'r2_not_configured')
     }
+    let sentCopyAccountId: string | null = null
+    if (input.sentCopyAccountId) {
+      const sentCopyTarget = await getAccountRow(context.env, input.sentCopyAccountId)
+      if (!sentCopyTarget || sentCopyTarget.kind !== 'imap') {
+        return fail(
+          'The sent copy target must be an IMAP account',
+          400,
+          undefined,
+          'sent_copy_invalid_target',
+        )
+      }
+      if (!sentCopyTarget.secret_enc) {
+        return fail(
+          'Connect the target account before copying sent mail into it',
+          400,
+          undefined,
+          'sent_copy_target_not_connected',
+        )
+      }
+      sentCopyAccountId = sentCopyTarget.id
+    }
     const provider = (input.relayProvider ?? context.env.RELAY_PROVIDER ?? 'smtp2go').toLowerCase()
     const providerMeta = findRelayProvider(provider)
     if (!providerMeta) {
@@ -127,13 +148,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? await encryptString(context.env, input.relayApiSecret)
       : null
     await context.env.DB.prepare(
-      `INSERT INTO accounts (id, email, display_name, kind, auth_type, sent_folder, auto_saves_sent, max_attachment_bytes, storage_driver, relay_provider, relay_api_key_enc, relay_api_secret_enc, relay_domain, relay_region, smtp_host, smtp_port, smtp_security, username, created_at)
-       VALUES (?, ?, ?, 'relay', 'none', 'Sent', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO accounts (id, email, display_name, kind, auth_type, sent_folder, auto_saves_sent, sent_copy_account_id, max_attachment_bytes, storage_driver, relay_provider, relay_api_key_enc, relay_api_secret_enc, relay_domain, relay_region, smtp_host, smtp_port, smtp_security, username, created_at)
+       VALUES (?, ?, ?, 'relay', 'none', 'Sent', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         id,
         input.email,
         input.displayName,
+        sentCopyAccountId,
         15 * 1024 * 1024,
         input.storageDriver,
         provider,

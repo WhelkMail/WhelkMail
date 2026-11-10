@@ -71,6 +71,43 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
   }
   const sentFolder = input.sentFolder ?? row.sent_folder
   const autoSavesSent = input.autoSavesSent === undefined ? row.auto_saves_sent : input.autoSavesSent ? 1 : 0
+  const sentCopyAccountId =
+    input.sentCopyAccountId === undefined ? row.sent_copy_account_id : input.sentCopyAccountId
+  if (sentCopyAccountId) {
+    if (row.kind !== 'relay') {
+      return fail(
+        'Only send-only accounts can copy sent mail into another account',
+        400,
+        undefined,
+        'sent_copy_not_supported',
+      )
+    }
+    if (sentCopyAccountId === row.id) {
+      return fail(
+        'Choose a different account for the sent copy',
+        400,
+        undefined,
+        'sent_copy_invalid_target',
+      )
+    }
+    const sentCopyTarget = await getAccountRow(context.env, sentCopyAccountId)
+    if (!sentCopyTarget || sentCopyTarget.kind !== 'imap') {
+      return fail(
+        'The sent copy target must be an IMAP account',
+        400,
+        undefined,
+        'sent_copy_invalid_target',
+      )
+    }
+    if (!sentCopyTarget.secret_enc) {
+      return fail(
+        'Connect the target account before copying sent mail into it',
+        400,
+        undefined,
+        'sent_copy_target_not_connected',
+      )
+    }
+  }
   const storageDriver = input.storageDriver ?? row.storage_driver
   const username = input.username ?? row.username
   const imapHost = input.imapHost ?? row.imap_host
@@ -115,7 +152,7 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
   }
 
   await context.env.DB.prepare(
-    'UPDATE accounts SET display_name = ?, signature = ?, incoming_label_id = ?, archive_imap_bodies = ?, imap_archive_driver = ?, delete_after_archive = ?, auto_sync = ?, sent_folder = ?, auto_saves_sent = ?, storage_driver = ?, username = ?, secret_enc = ?, relay_provider = ?, relay_api_key_enc = ?, relay_api_secret_enc = ?, relay_domain = ?, relay_region = ?, imap_host = ?, imap_port = ?, imap_security = ?, smtp_host = ?, smtp_port = ?, smtp_security = ? WHERE id = ?',
+    'UPDATE accounts SET display_name = ?, signature = ?, incoming_label_id = ?, archive_imap_bodies = ?, imap_archive_driver = ?, delete_after_archive = ?, auto_sync = ?, sent_folder = ?, auto_saves_sent = ?, sent_copy_account_id = ?, storage_driver = ?, username = ?, secret_enc = ?, relay_provider = ?, relay_api_key_enc = ?, relay_api_secret_enc = ?, relay_domain = ?, relay_region = ?, imap_host = ?, imap_port = ?, imap_security = ?, smtp_host = ?, smtp_port = ?, smtp_security = ? WHERE id = ?',
   )
     .bind(
       displayName,
@@ -127,6 +164,7 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
       autoSync,
       sentFolder,
       autoSavesSent,
+      sentCopyAccountId,
       storageDriver,
       username,
       secretEncrypted,
@@ -175,6 +213,7 @@ export const onRequestDelete: PagesFunction<Env> = async (context) => {
     context.env.DB.prepare('DELETE FROM deletion_log WHERE account_id = ?').bind(id),
     context.env.DB.prepare('DELETE FROM push_prefs WHERE account_id = ?').bind(id),
     context.env.DB.prepare('DELETE FROM messages WHERE account_id = ?').bind(id),
+    context.env.DB.prepare('UPDATE accounts SET sent_copy_account_id = NULL WHERE sent_copy_account_id = ?').bind(id),
     context.env.DB.prepare('DELETE FROM accounts WHERE id = ?').bind(id),
   ])
   return json({ ok: true })

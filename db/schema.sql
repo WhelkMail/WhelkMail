@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   drafts_folder TEXT,
   spam_folder TEXT,
   auto_saves_sent INTEGER NOT NULL DEFAULT 0,
+  sent_copy_account_id TEXT,
   max_attachment_bytes INTEGER NOT NULL DEFAULT 15728640,
   storage_driver TEXT NOT NULL DEFAULT 'provider',
   relay_provider TEXT,

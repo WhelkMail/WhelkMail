@@ -30,6 +30,7 @@ export interface AccountRow {
   drafts_folder: string | null
   spam_folder: string | null
   auto_saves_sent: number
+  sent_copy_account_id: string | null
   max_attachment_bytes: number
   storage_driver: string
   relay_provider: string | null
@@ -112,6 +113,7 @@ export function publicAccount(row: AccountRow, r2Available: boolean): Account {
     autoSync: Boolean(row.auto_sync),
     sentFolder: row.sent_folder,
     autoSavesSent: Boolean(row.auto_saves_sent),
+    sentCopyAccountId: row.sent_copy_account_id ?? null,
     maxAttachmentBytes: row.max_attachment_bytes,
     storageDriver: row.storage_driver as StorageDriver,
     relayProvider: row.relay_provider,
