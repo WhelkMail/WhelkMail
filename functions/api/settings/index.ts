@@ -7,19 +7,22 @@ import { isSchemaError, schemaOutdated } from '../../_lib/schema'
 const DEFAULT_SIGNATURE_KEY = 'default_signature'
 const SIGNATURE_MODE_KEY = 'signature_mode'
 const ALLOW_REMOTE_IMAGES_KEY = 'allow_remote_images'
+const METADATA_RETENTION_KEY = 'metadata_retention_days'
 
 export async function getSettings(env: Env): Promise<AppSettings> {
   const result = await env.DB.prepare(
-    'SELECT key, value FROM app_settings WHERE key IN (?, ?, ?)',
+    'SELECT key, value FROM app_settings WHERE key IN (?, ?, ?, ?)',
   )
-    .bind(DEFAULT_SIGNATURE_KEY, SIGNATURE_MODE_KEY, ALLOW_REMOTE_IMAGES_KEY)
+    .bind(DEFAULT_SIGNATURE_KEY, SIGNATURE_MODE_KEY, ALLOW_REMOTE_IMAGES_KEY, METADATA_RETENTION_KEY)
     .all<{ key: string; value: string }>()
   const values = new Map(result.results.map((row) => [row.key, row.value]))
   const mode = values.get(SIGNATURE_MODE_KEY)
+  const retention = Number(values.get(METADATA_RETENTION_KEY) ?? '0')
   return {
     defaultSignature: values.get(DEFAULT_SIGNATURE_KEY) ?? '',
     signatureMode: mode === 'per_account' ? 'per_account' : 'shared',
     allowRemoteImages: values.get(ALLOW_REMOTE_IMAGES_KEY) === '1',
+    metadataRetentionDays: Number.isFinite(retention) && retention > 0 ? Math.floor(retention) : 0,
   }
 }
 
@@ -76,6 +79,13 @@ async function updateSettings(context: Parameters<PagesFunction<Env>>[0]): Promi
       context.env.DB.prepare(
         'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
       ).bind(ALLOW_REMOTE_IMAGES_KEY, parsed.data.allowRemoteImages ? '1' : '0'),
+    )
+  }
+  if (parsed.data.metadataRetentionDays !== undefined) {
+    statements.push(
+      context.env.DB.prepare(
+        'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      ).bind(METADATA_RETENTION_KEY, String(parsed.data.metadataRetentionDays)),
     )
   }
   if (statements.length > 0) {

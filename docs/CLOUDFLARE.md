@@ -192,12 +192,16 @@ npx wrangler pages secret put CRON_SECRET --project-name whelkmail
 
 `VAPID_SUBJECT` can be a plain variable such as `mailto:you@example.com`.
 
-Set `APP_URL` in `worker/wrangler.toml` to the Pages URL, then set the same `CRON_SECRET` on the cron worker and deploy it:
+The cron worker config is personal, so it is gitignored. Copy the template, set your Pages URL and deploy:
 
 ```bash
+cp worker/wrangler.toml.example worker/wrangler.toml
+# set APP_URL in worker/wrangler.toml to https://<your-project>.pages.dev
 npx wrangler secret put CRON_SECRET -c worker/wrangler.toml
 npm run cron:deploy
 ```
+
+`npm run cron:deploy` creates the file from the template when it is missing and stops with a clear error while `APP_URL` is still empty or a placeholder.
 
 The worker runs every 5 minutes and calls `POST /api/cron/notifications` on the Pages app. In the same run it also applies automatic forwarding rules, the optional provider cleanup, and the per-account automatic background sync. Enable notifications from **Settings → Push notifications**, background sync per account in Settings, and forwarding/deletion in the account/filter sections.
 

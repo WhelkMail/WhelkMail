@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   AlertCircle,
+  ChevronDown,
   FolderInput,
   Inbox,
   Loader2,
@@ -30,6 +31,9 @@ interface MailListProps {
   className?: string
   selectedIds?: string[]
   actionBusy?: boolean
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
   onSelect: (id: string) => void
   onToggleSelect?: (id: string) => void
   onToggleSelectAll?: (ids: string[]) => void
@@ -47,6 +51,85 @@ interface SwipeGesture {
   swiping: boolean
   longPressFired: boolean
   longPressTimer: number | null
+  /** Row that receives the transform; kept off React state so dragging never re-renders. */
+  row: HTMLElement | null
+  /** Wrapper that carries the CSS variables driving the action hints. */
+  wrapper: HTMLElement | null
+  frame: number | null
+  pendingDx: number
+}
+
+/** Horizontal travel before the row starts following the finger. */
+const SWIPE_START = 8
+/** Travel that commits the action on release. */
+const SWIPE_COMMIT = 60
+const SWIPE_MAX = 120
+
+function paintSwipe(gesture: SwipeGesture): void {
+  gesture.frame = null
+  const dx = gesture.pendingDx
+  if (gesture.row) {
+    gesture.row.style.transform = `translate3d(${dx}px, 0, 0)`
+  }
+  if (gesture.wrapper) {
+    gesture.wrapper.style.setProperty(
+      '--swipe-start',
+      dx > 0 ? String(Math.min(1, dx / SWIPE_COMMIT)) : '0',
+    )
+    gesture.wrapper.style.setProperty(
+      '--swipe-end',
+      dx < 0 ? String(Math.min(1, -dx / SWIPE_COMMIT)) : '0',
+    )
+  }
+}
+
+/** Coalesce pointer moves into one paint per frame. */
+function scheduleSwipe(gesture: SwipeGesture, dx: number): void {
+  gesture.pendingDx = dx
+  if (gesture.frame !== null) {
+    return
+  }
+  gesture.frame = window.requestAnimationFrame(() => paintSwipe(gesture))
+}
+
+/** Animate the row off-screen (action) or back to rest (aborted swipe). */
+function settleSwipe(gesture: SwipeGesture, direction: 'start' | 'end' | null): void {
+  if (gesture.frame !== null) {
+    window.cancelAnimationFrame(gesture.frame)
+    gesture.frame = null
+  }
+  const row = gesture.row
+  const wrapper = gesture.wrapper
+  const transition = 'transform 150ms cubic-bezier(0.22, 0.61, 0.36, 1)'
+  if (row) {
+    row.style.transition = transition
+    row.style.transform =
+      direction === 'end'
+        ? 'translate3d(-100%, 0, 0)'
+        : direction === 'start'
+          ? 'translate3d(100%, 0, 0)'
+          : 'translate3d(0, 0, 0)'
+  }
+  if (wrapper) {
+    wrapper.style.setProperty('--swipe-start', '0')
+    wrapper.style.setProperty('--swipe-end', '0')
+  }
+  window.setTimeout(() => {
+    if (!row?.isConnected) {
+      return
+    }
+    // The list did not drop the row (action failed): slide it back in.
+    row.style.transition = transition
+    row.style.transform = 'translate3d(0, 0, 0)'
+    window.setTimeout(() => {
+      if (!row.isConnected) {
+        return
+      }
+      row.style.transition = ''
+      row.style.transform = ''
+      row.style.willChange = ''
+    }, 170)
+  }, direction ? 400 : 170)
 }
 
 function useIsMobile(): boolean {
@@ -95,6 +178,9 @@ export function MailList({
   className,
   selectedIds = [],
   actionBusy = false,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
   onSelect,
   onToggleSelect,
   onToggleSelectAll,
@@ -104,7 +190,6 @@ export function MailList({
   const { t, locale } = useI18n()
   const isMobile = useIsMobile()
   const [selectMode, setSelectMode] = useState(false)
-  const [swipe, setSwipe] = useState<{ id: string; dx: number } | null>(null)
   const gestureRef = useRef<SwipeGesture | null>(null)
   const suppressClickRef = useRef(false)
   const title = titleOverride ?? labelName ?? folderName(folder, t)
@@ -143,7 +228,6 @@ export function MailList({
 
   useEffect(() => {
     setSelectMode(false)
-    setSwipe(null)
     gestureRef.current = null
   }, [folder])
 
@@ -187,6 +271,9 @@ export function MailList({
       return
     }
     suppressClickRef.current = false
+    if (gestureRef.current) {
+      cancelLongPress(gestureRef.current)
+    }
     gestureRef.current = {
       id: message.id,
       startX: event.clientX,
@@ -196,6 +283,10 @@ export function MailList({
       moved: false,
       swiping: false,
       longPressFired: false,
+      row: event.currentTarget,
+      wrapper: event.currentTarget.parentElement,
+      frame: null,
+      pendingDx: 0,
       longPressTimer: window.setTimeout(() => {
         const gesture = gestureRef.current
         if (!gesture || gesture.moved || gesture.swiping) {
@@ -206,6 +297,11 @@ export function MailList({
         suppressClickRef.current = true
         enterSelection(message.id)
       }, 450),
+    }
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Pointer capture is best effort: the handlers still work without it.
     }
   }
 
@@ -219,23 +315,30 @@ export function MailList({
     }
     gesture.dx = event.clientX - gesture.startX
     gesture.dy = event.clientY - gesture.startY
-    if (Math.abs(gesture.dx) > 12 || Math.abs(gesture.dy) > 12) {
+    if (!gesture.moved && (Math.abs(gesture.dx) > SWIPE_START || Math.abs(gesture.dy) > SWIPE_START)) {
       gesture.moved = true
       cancelLongPress(gesture)
     }
-    if (
-      gesture.longPressFired ||
-      (gesture.moved && Math.abs(gesture.dy) > Math.abs(gesture.dx))
-    ) {
+    if (gesture.longPressFired) {
       return
     }
-    if (Math.abs(gesture.dx) > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy)) {
-      gesture.swiping = true
-      if (event.cancelable) {
-        event.preventDefault()
-      }
-      setSwipe({ id: message.id, dx: Math.max(-120, Math.min(120, gesture.dx)) })
+    // Vertical intent: let the browser scroll instead of fighting the gesture.
+    if (gesture.moved && Math.abs(gesture.dy) > Math.abs(gesture.dx)) {
+      return
     }
+    if (Math.abs(gesture.dx) <= SWIPE_START || Math.abs(gesture.dx) <= Math.abs(gesture.dy)) {
+      return
+    }
+    if (!gesture.swiping) {
+      gesture.swiping = true
+      if (gesture.row) {
+        gesture.row.style.transition = 'none'
+        gesture.row.style.willChange = 'transform'
+      }
+    }
+    // No setState here: a re-render of the whole list per pointer move is what
+    // made the swipe trail behind the finger.
+    scheduleSwipe(gesture, Math.max(-SWIPE_MAX, Math.min(SWIPE_MAX, gesture.dx)))
   }
 
   function handlePointerUp(message: MessageSummary) {
@@ -246,23 +349,45 @@ export function MailList({
     }
     gestureRef.current = null
     cancelLongPress(gesture)
-    setSwipe(null)
     if (gesture.longPressFired) {
       suppressClickRef.current = true
+      settleSwipe(gesture, null)
       return
     }
-    if (!gesture.swiping || !gesture.moved) {
+    if (!gesture.swiping) {
       if (gesture.moved) {
         suppressClickRef.current = true
       }
       return
     }
     suppressClickRef.current = true
-    if (gesture.dx <= -60) {
-      onMessageAction?.(message.id, 'delete')
-    } else if (gesture.dx >= 60 && rightAction) {
-      onMessageAction?.(message.id, rightAction.action, rightAction.target)
+    const commitsDelete = gesture.dx <= -SWIPE_COMMIT
+    const commitsRight = !commitsDelete && gesture.dx >= SWIPE_COMMIT && Boolean(rightAction)
+    if (!commitsDelete && !commitsRight) {
+      settleSwipe(gesture, null)
+      return
     }
+    // Slide the row out first, then dispatch: the action re-fetches the list and
+    // an immediate update would cut the animation off.
+    settleSwipe(gesture, commitsDelete ? 'end' : 'start')
+    const id = message.id
+    if (commitsDelete) {
+      window.setTimeout(() => onMessageAction?.(id, 'delete'), 140)
+      return
+    }
+    if (rightAction) {
+      const { action, target } = rightAction
+      window.setTimeout(() => onMessageAction?.(id, action, target), 140)
+    }
+  }
+
+  function handlePointerCancel() {
+    const gesture = gestureRef.current
+    if (gesture) {
+      cancelLongPress(gesture)
+      settleSwipe(gesture, null)
+    }
+    gestureRef.current = null
   }
 
   function handleRowClick(message: MessageSummary) {
@@ -414,16 +539,14 @@ export function MailList({
             <p className="text-xs">{emptyHint}</p>
           </div>
         ) : (
-          messages.map((message) => {
+          <>
+            {messages.map((message) => {
             const label = primaryLabel(message, fallback)
             const messageLabels = message.labelIds
               .map((id) => labels.find((item) => item.id === id))
               .filter((item): item is Label => Boolean(item))
             const checked = selectedSet.has(message.id)
             const showCheckbox = canSelect && (!isMobile || selectMode)
-            const offset = swipe?.id === message.id ? swipe.dx : 0
-            const deleteVisible = offset < -10
-            const rightVisible = offset > 10
             return (
               <div
                 key={message.id}
@@ -441,10 +564,8 @@ export function MailList({
                 {isMobile ? (
                   <div className="pointer-events-none absolute inset-0 flex items-stretch justify-between text-xs font-medium">
                     <div
-                      className={cn(
-                        'flex flex-1 items-center gap-1.5 bg-emerald-50 px-4 text-emerald-700 transition-opacity',
-                        rightVisible ? 'opacity-100' : 'opacity-0',
-                      )}
+                      className="flex flex-1 items-center gap-1.5 bg-emerald-50 px-4 text-emerald-700 transition-opacity duration-100"
+                      style={{ opacity: 'var(--swipe-start, 0)' }}
                     >
                       {rightAction?.action === 'move' ? (
                         <Inbox size={16} />
@@ -456,10 +577,8 @@ export function MailList({
                         : t('list.spamAction')}
                     </div>
                     <div
-                      className={cn(
-                        'flex flex-1 items-center justify-end gap-1.5 bg-red-50 px-4 text-brand-strong transition-opacity',
-                        deleteVisible ? 'opacity-100' : 'opacity-0',
-                      )}
+                      className="flex flex-1 items-center justify-end gap-1.5 bg-red-50 px-4 text-brand-strong transition-opacity duration-100"
+                      style={{ opacity: 'var(--swipe-end, 0)' }}
                     >
                       <Trash2 size={16} />
                       {t('list.delete')}
@@ -482,20 +601,8 @@ export function MailList({
                   onPointerDown={(event) => handlePointerDown(event, message)}
                   onPointerMove={(event) => handlePointerMove(event, message)}
                   onPointerUp={() => handlePointerUp(message)}
-                  onPointerCancel={() => {
-                    const gesture = gestureRef.current
-                    if (gesture) {
-                      cancelLongPress(gesture)
-                    }
-                    gestureRef.current = null
-                    setSwipe(null)
-                  }}
-                  style={{
-                    transform: offset === 0 ? undefined : `translate3d(${offset}px, 0, 0)`,
-                    touchAction: 'pan-y',
-                    transition:
-                      swipe?.id === message.id ? 'none' : 'transform 180ms ease',
-                  }}
+                  onPointerCancel={handlePointerCancel}
+                  style={{ touchAction: 'pan-y' }}
                   className={cn(
                     'grid w-full cursor-pointer items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-100 focus:bg-slate-100 focus:outline-none sm:gap-3 sm:px-4',
                     showCheckbox
@@ -587,7 +694,25 @@ export function MailList({
                 </div>
               </div>
             )
-          })
+            })}
+            {onLoadMore && hasMore ? (
+              <div className="p-4">
+                <button
+                  type="button"
+                  onClick={onLoadMore}
+                  disabled={loadingMore}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {loadingMore ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <ChevronDown size={14} />
+                  )}
+                  {t('list.loadMore')}
+                </button>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </section>

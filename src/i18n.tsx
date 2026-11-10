@@ -85,6 +85,7 @@ const en: Record<string, string> = {
   'list.emptySpamHint': 'Messages you mark as spam will appear here.',
   'list.emptyLabel': 'No messages with this label.',
   'list.emptyLabelHint': 'Apply the label from a message in your inbox, sent items or drafts.',
+  'list.loadMore': 'Load more messages',
   'list.noRecipients': '(no recipients)',
   'list.unknownSender': '(unknown sender)',
   'list.to': 'To: {value}',
@@ -217,6 +218,11 @@ const en: Record<string, string> = {
   'settings.remoteImages': 'Load remote images by default',
   'settings.remoteImagesHint':
     'Remote images can be used to track when a message is opened. You can still hide them per message.',
+  'settings.retention': 'Synced message metadata',
+  'settings.retentionHint':
+    'Messages older than this are removed from the local mirror. They stay on the provider and are read again when you open them. Drafts are never removed.',
+  'settings.retentionForever': 'Keep everything',
+  'settings.retentionDays': 'Keep {days} days',
   'settings.delete': 'Delete',
   'settings.deleteConfirm': 'Delete account {email}?',
   'settings.accountUpdated': 'Account updated',
@@ -618,6 +624,7 @@ const it: Record<string, string> = {
   'list.emptySpamHint': 'I messaggi segnalati come spam appariranno qui.',
   'list.emptyLabel': 'Nessun messaggio con questa etichetta.',
   'list.emptyLabelHint': 'Applica l’etichetta da un messaggio in arrivo, inviato o in bozza.',
+  'list.loadMore': 'Carica altri messaggi',
   'list.noRecipients': '(nessun destinatario)',
   'list.unknownSender': '(mittente sconosciuto)',
   'list.to': 'A: {value}',
@@ -753,6 +760,11 @@ const it: Record<string, string> = {
   'settings.remoteImages': 'Carica le immagini remote per impostazione predefinita',
   'settings.remoteImagesHint':
     'Le immagini remote possono essere usate per tracciare l’apertura di un messaggio. Puoi comunque nasconderle per singolo messaggio.',
+  'settings.retention': 'Metadati dei messaggi sincronizzati',
+  'settings.retentionHint':
+    'I messaggi più vecchi vengono rimossi dalla copia locale. Restano sul provider e vengono riletti quando li apri. Le bozze non vengono mai rimosse.',
+  'settings.retentionForever': 'Mantieni tutto',
+  'settings.retentionDays': 'Mantieni {days} giorni',
   'settings.delete': 'Elimina',
   'settings.deleteConfirm': 'Eliminare l’account {email}?',
   'settings.accountUpdated': 'Account aggiornato',

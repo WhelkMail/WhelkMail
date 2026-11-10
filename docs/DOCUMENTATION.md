@@ -92,10 +92,12 @@ functions/                 Cloudflare Pages Functions
     relay/                 HTTP relay adapters
     microsoft/oauth.ts     Microsoft OAuth2 / XOAUTH2 token flow
   api/                     HTTP endpoints
-shared/                    Types, Zod schemas, provider presets
+shared/                    Types, Zod schemas, provider presets, paging helpers
 src/                       React application
-db/schema.sql              D1 schema
+db/schema.sql              D1 schema for a fresh install
+db/migrations/             Additive upgrades for existing databases
 wrangler.toml.example      local Pages/D1 configuration template
+worker/wrangler.toml.example  cron worker template (the real file is gitignored)
 ```
 
 ## 5. Data model

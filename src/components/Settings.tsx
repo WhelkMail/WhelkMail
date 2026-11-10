@@ -31,6 +31,9 @@ import { PushSettings } from './PushSettings'
 import { SyncPanel } from './SyncPanel'
 import { TwoFactorSettings } from './TwoFactorSettings'
 
+/** Retention choices offered in Settings; 0 (keep everything) is the default. */
+const RETENTION_OPTIONS = [30, 90, 180, 365, 730]
+
 interface SettingsProps {
   accounts: Account[]
   labels: Label[]
@@ -53,6 +56,8 @@ interface SettingsProps {
   onReadingPaneChange: (value: boolean) => void
   allowRemoteImages: boolean
   onAllowRemoteImagesChange: (value: boolean) => void
+  metadataRetentionDays: number
+  onMetadataRetentionChange: (value: number) => void
   defaultSenderNew: string
   onDefaultSenderNewChange: (value: string) => void
   defaultSenderReply: string
@@ -730,6 +735,8 @@ export function Settings({
   onReadingPaneChange,
   allowRemoteImages,
   onAllowRemoteImagesChange,
+  metadataRetentionDays,
+  onMetadataRetentionChange,
   defaultSenderNew,
   onDefaultSenderNewChange,
   defaultSenderReply,
@@ -854,6 +861,24 @@ export function Settings({
                 {t('settings.remoteImages')}
               </label>
               <p className="mt-1 text-[11px] text-muted">{t('settings.remoteImagesHint')}</p>
+              <label className="mt-3 block text-xs">
+                <span className="mb-1 block font-medium text-muted">
+                  {t('settings.retention')}
+                </span>
+                <select
+                  value={String(metadataRetentionDays)}
+                  onChange={(event) => onMetadataRetentionChange(Number(event.target.value))}
+                  className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none"
+                >
+                  <option value="0">{t('settings.retentionForever')}</option>
+                  {RETENTION_OPTIONS.map((days) => (
+                    <option key={days} value={days}>
+                      {t('settings.retentionDays', { days })}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-muted">{t('settings.retentionHint')}</p>
+              </label>
             </div>
 
             <div className="mt-3 rounded-2xl border border-line bg-white p-5">

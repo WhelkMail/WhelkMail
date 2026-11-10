@@ -9,6 +9,12 @@
   "theme_color": "#c5221f",
   "icons": [
     {
+      "src": "/notification-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "/whelkmail-logo.svg",
       "sizes": "any",
       "type": "image/svg+xml",

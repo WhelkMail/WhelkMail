@@ -1,5 +1,12 @@
-const CACHE = 'whelkmail-v1'
-const SHELL = ['/', '/favicon.svg', '/whelkmail-logo.svg', '/manifest.webmanifest']
+const CACHE = 'whelkmail-v2'
+const SHELL = [
+  '/',
+  '/favicon.svg',
+  '/whelkmail-logo.svg',
+  '/manifest.webmanifest',
+  '/notification-badge.png',
+  '/notification-icon.png',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -72,8 +79,10 @@ self.addEventListener('push', (event) => {
   const title = payload.title || 'WhelkMail'
   const options = {
     body: payload.body || '',
-    icon: '/whelkmail-logo.svg',
-    badge: '/favicon.svg',
+    // Android masks the badge into a monochrome silhouette in the status bar and
+    // only renders bitmaps there, so both assets are PNG (see scripts/generate-icons.mjs).
+    icon: payload.icon || '/notification-icon.png',
+    badge: payload.badge || '/notification-badge.png',
     data: { url: payload.url || '/', tag: payload.tag || undefined },
     tag: payload.tag || undefined,
   }

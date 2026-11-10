@@ -11,8 +11,13 @@ import type { Env } from '../../_lib/env'
 import { fail, json } from '../../_lib/http'
 import { isSchemaError } from '../../_lib/schema'
 import { imapMessageSummary, type ImapMessageRow } from '../../_lib/sync'
+import {
+  clampPageSize,
+  decodePageCursor,
+  pageOf,
+  type PageCursor,
+} from '../../../shared/paging'
 
-const MAX_RESULTS = 100
 const MAX_CONTACTS = 20
 
 function likeNeedle(query: string): string {
@@ -23,6 +28,14 @@ function parseFolder(value: string | null): Folder | null {
   return value === 'inbox' || value === 'sent' || value === 'draft' || value === 'spam'
     ? value
     : null
+}
+
+function pageClause(before: PageCursor | null): string {
+  return before ? ' AND (sent_at < ? OR (sent_at = ? AND id < ?))' : ''
+}
+
+function pageParams(before: PageCursor | null): (string | number)[] {
+  return before ? [before.date, before.date, before.id] : []
 }
 
 async function searchLabels(env: Env, messages: MessageSummary[]): Promise<void> {
@@ -59,8 +72,10 @@ async function searchLabels(env: Env, messages: MessageSummary[]): Promise<void>
 export const onRequestGet: PagesFunction<Env> = async (context) => {
   const url = new URL(context.request.url)
   const query = (url.searchParams.get('q') ?? '').trim()
+  const before = decodePageCursor(url.searchParams.get('before'))
+  const limit = clampPageSize(Number(url.searchParams.get('limit') ?? ''))
   if (!query) {
-    return json({ messages: [], contacts: [], errors: [] })
+    return json({ messages: [], contacts: [], errors: [], nextCursor: null })
   }
   if (query.length > 200) {
     return fail('Search query is too long', 400, undefined, 'invalid_request')
@@ -68,7 +83,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
   const accountId = url.searchParams.get('accountId') ?? 'all'
   const folder = parseFolder(url.searchParams.get('folder'))
-  const includeContacts = url.searchParams.get('contacts') !== '0'
+  const includeContacts = url.searchParams.get('contacts') !== '0' && !before
 
   let accounts: AccountRow[]
   if (accountId === 'all') {
@@ -88,15 +103,16 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   if (accountIds.length > 0) {
     const placeholders = accountIds.map(() => '?').join(', ')
     const folderClause = folder ? ' AND folder = ?' : ''
-    const imapParams: (string | number)[] = [...Array(6).fill(needle), ...accountIds]
+    const imapParams: (string | number)[] = [...Array(7).fill(needle), ...accountIds]
     if (folder) {
       imapParams.push(folder)
     }
+    imapParams.push(...pageParams(before), limit)
     try {
       const rows = await context.env.DB.prepare(
-        `SELECT * FROM imap_messages WHERE (lower(subject) LIKE ? OR lower(snippet) LIKE ? OR lower(from_email) LIKE ? OR lower(ifnull(from_name, '')) LIKE ? OR lower(to_json) LIKE ? OR lower(cc_json) LIKE ?) AND account_id IN (${placeholders})${folderClause} ORDER BY sent_at DESC LIMIT ?`,
+        `SELECT * FROM imap_messages WHERE (lower(subject) LIKE ? OR lower(snippet) LIKE ? OR lower(search_text) LIKE ? OR lower(from_email) LIKE ? OR lower(ifnull(from_name, '')) LIKE ? OR lower(to_json) LIKE ? OR lower(cc_json) LIKE ?) AND account_id IN (${placeholders})${folderClause}${pageClause(before)} ORDER BY sent_at DESC, id DESC LIMIT ?`,
       )
-        .bind(...imapParams, MAX_RESULTS)
+        .bind(...imapParams)
         .all<ImapMessageRow>()
       for (const row of rows.results) {
         const account = byId.get(row.account_id)
@@ -108,6 +124,23 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       if (!isSchemaError(error)) {
         throw error
       }
+      // Databases created before migration 019 have no search_text column.
+      const legacyParams: (string | number)[] = [...Array(6).fill(needle), ...accountIds]
+      if (folder) {
+        legacyParams.push(folder)
+      }
+      legacyParams.push(...pageParams(before), limit)
+      const rows = await context.env.DB.prepare(
+        `SELECT * FROM imap_messages WHERE (lower(subject) LIKE ? OR lower(snippet) LIKE ? OR lower(from_email) LIKE ? OR lower(ifnull(from_name, '')) LIKE ? OR lower(to_json) LIKE ? OR lower(cc_json) LIKE ?) AND account_id IN (${placeholders})${folderClause}${pageClause(before)} ORDER BY sent_at DESC, id DESC LIMIT ?`,
+      )
+        .bind(...legacyParams)
+        .all<ImapMessageRow>()
+      for (const row of rows.results) {
+        const account = byId.get(row.account_id)
+        if (account) {
+          messages.push(imapMessageSummary(row, account))
+        }
+      }
     }
 
     const relayClause = folder ? ' AND folder = ?' : ''
@@ -115,11 +148,12 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     if (folder) {
       relayParams.push(folder)
     }
+    relayParams.push(...pageParams(before), limit)
     try {
       const rows = await context.env.DB.prepare(
-        `SELECT * FROM messages WHERE (lower(subject) LIKE ? OR lower(snippet) LIKE ? OR lower(body_text) LIKE ? OR lower(from_email) LIKE ? OR lower(ifnull(from_name, '')) LIKE ? OR lower(to_json) LIKE ? OR lower(cc_json) LIKE ?) AND account_id IN (${placeholders})${relayClause} ORDER BY sent_at DESC LIMIT ?`,
+        `SELECT * FROM messages WHERE (lower(subject) LIKE ? OR lower(snippet) LIKE ? OR lower(body_text) LIKE ? OR lower(from_email) LIKE ? OR lower(ifnull(from_name, '')) LIKE ? OR lower(to_json) LIKE ? OR lower(cc_json) LIKE ?) AND account_id IN (${placeholders})${relayClause}${pageClause(before)} ORDER BY sent_at DESC, id DESC LIMIT ?`,
       )
-        .bind(...relayParams, MAX_RESULTS)
+        .bind(...relayParams)
         .all<MessageRow>()
       for (const row of rows.results) {
         const account = byId.get(row.account_id)
@@ -134,9 +168,13 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     }
   }
 
-  messages.sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
-  const limited = messages.slice(0, MAX_RESULTS)
-  await searchLabels(context.env, limited)
+  messages.sort(
+    (left, right) =>
+      new Date(right.date).getTime() - new Date(left.date).getTime() ||
+      left.id.localeCompare(right.id),
+  )
+  const page = pageOf(messages, limit)
+  await searchLabels(context.env, page.items)
 
   let contacts: ReturnType<typeof toContact>[] = []
   if (includeContacts) {
@@ -154,5 +192,5 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     }
   }
 
-  return json({ messages: limited, contacts, errors: [] })
+  return json({ messages: page.items, contacts, errors: [], nextCursor: page.nextCursor })
 }

@@ -122,6 +122,8 @@ export interface AppSettings {
   defaultSignature: string
   signatureMode: SignatureMode
   allowRemoteImages: boolean
+  /** Delete mirrored IMAP metadata older than this many days. 0 keeps everything. */
+  metadataRetentionDays: number
 }
 
 export interface Mailbox {
@@ -206,6 +208,14 @@ export interface MessageSearchResult {
   messages: MessageSummary[]
   contacts: Contact[]
   errors: { accountId: string; email: string; message: string }[]
+  nextCursor: string | null
+}
+
+export interface MessageListResult {
+  messages: MessageSummary[]
+  errors: { accountId: string; email: string; message: string }[]
+  syncing?: boolean
+  nextCursor: string | null
 }
 
 export interface AttachmentInput {

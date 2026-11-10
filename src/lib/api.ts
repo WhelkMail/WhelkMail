@@ -17,8 +17,8 @@ import type {
   MailboxSyncState,
   MailFilter,
   MessageDetail,
+  MessageListResult,
   MessageSearchResult,
-  MessageSummary,
   PushPrefs,
   PushSubscriptionInput,
   SearchScope,
@@ -226,10 +226,14 @@ export const api = {
     accountId: string,
     folder: Folder,
     labelId?: string | null,
-  ): Promise<{ messages: MessageSummary[]; errors: AccountError[]; syncing?: boolean }> {
+    before?: string | null,
+  ): Promise<MessageListResult> {
     const search = new URLSearchParams({ accountId, folder })
     if (labelId) {
       search.set('labelId', labelId)
+    }
+    if (before) {
+      search.set('before', before)
     }
     return request(`/api/messages?${search.toString()}`)
   },
@@ -241,6 +245,7 @@ export const api = {
     accountId: string
     folder?: SearchScope
     contacts?: boolean
+    before?: string | null
   }): Promise<MessageSearchResult> {
     const params = new URLSearchParams({ q: options.query, accountId: options.accountId })
     if (options.folder && options.folder !== 'all') {
@@ -248,6 +253,9 @@ export const api = {
     }
     if (options.contacts === false) {
       params.set('contacts', '0')
+    }
+    if (options.before) {
+      params.set('before', options.before)
     }
     return request(`/api/messages/search?${params.toString()}`)
   },

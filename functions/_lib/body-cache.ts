@@ -108,11 +108,15 @@ export function bodyCacheAvailable(): boolean {
   return cacheAvailable !== false
 }
 
-async function cacheBytes(env: Env): Promise<number> {
+async function cacheStats(env: Env): Promise<{ total: number; count: number }> {
   const row = await env.DB.prepare(
-    'SELECT COALESCE(SUM(size), 0) AS total FROM imap_body_cache',
-  ).first<{ total: number }>()
-  return row?.total ?? 0
+    'SELECT COALESCE(SUM(size), 0) AS total, COUNT(*) AS count FROM imap_body_cache',
+  ).first<{ total: number; count: number }>()
+  return { total: row?.total ?? 0, count: row?.count ?? 0 }
+}
+
+async function cacheBytes(env: Env): Promise<number> {
+  return (await cacheStats(env)).total
 }
 
 async function evictOldest(env: Env, limit: number): Promise<number> {
@@ -128,6 +132,16 @@ async function evictOldest(env: Env, limit: number): Promise<number> {
   return result.meta.changes ?? 0
 }
 
+/**
+ * Delete everything above the byte budget, keeping the most recently cached
+ * messages.
+ *
+ * The running total walks the cache from the newest entry backwards, so a row
+ * whose cumulative size already exceeds the budget is one of the old entries
+ * and gets dropped. With `cached_at ASC` the running total would start at the
+ * oldest message and evict the fresh bodies instead, which is the opposite of
+ * what a cache must do.
+ */
 export async function cleanupBodyCache(env: Env): Promise<void> {
   if (cacheAvailable === false) {
     return
@@ -146,7 +160,7 @@ export async function cleanupBodyCache(env: Env): Promise<void> {
              SELECT message_id FROM (
                SELECT message_id,
                  SUM(size) OVER (
-                   ORDER BY cached_at ASC
+                   ORDER BY cached_at DESC
                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                  ) AS running
                FROM imap_body_cache
@@ -169,7 +183,16 @@ export async function cleanupBodyCache(env: Env): Promise<void> {
 
     let passes = 0
     while (totalBytes > MAX_CACHE_BYTES && passes < MAX_EVICTION_PASSES) {
-      const removed = await evictOldest(env, EVICTION_BATCH)
+      // Delete roughly as many rows as the overshoot needs instead of a fixed
+      // batch, so a cache that is a few bytes over does not lose everything.
+      const stats = await cacheStats(env)
+      const excess = stats.total - MAX_CACHE_BYTES
+      const average = stats.count > 0 ? stats.total / stats.count : 0
+      const batch =
+        average > 0
+          ? Math.min(EVICTION_BATCH, Math.max(1, Math.ceil(excess / average)))
+          : EVICTION_BATCH
+      const removed = await evictOldest(env, batch)
       if (removed === 0) {
         break
       }

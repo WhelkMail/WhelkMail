@@ -153,6 +153,7 @@ CREATE TABLE IF NOT EXISTS imap_messages (
   bcc_json TEXT NOT NULL DEFAULT '[]',
   subject TEXT NOT NULL DEFAULT '',
   snippet TEXT NOT NULL DEFAULT '',
+  search_text TEXT NOT NULL DEFAULT '',
   sent_at TEXT NOT NULL,
   size INTEGER NOT NULL DEFAULT 0,
   unread INTEGER NOT NULL DEFAULT 0,
@@ -165,6 +166,7 @@ CREATE TABLE IF NOT EXISTS imap_messages (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_imap_messages_uid ON imap_messages (account_id, folder, uid);
 CREATE INDEX IF NOT EXISTS idx_imap_messages_list ON imap_messages (account_id, folder, sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_imap_messages_page ON imap_messages (account_id, folder, sent_at DESC, id);
 CREATE INDEX IF NOT EXISTS idx_imap_messages_stable ON imap_messages (account_id, stable_key);
 
 CREATE TABLE IF NOT EXISTS imap_body_cache (

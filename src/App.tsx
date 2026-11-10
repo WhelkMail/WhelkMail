@@ -23,6 +23,8 @@ import type {
 import { useI18n } from './i18n'
 import { api, ApiError, type AccountError } from './lib/api'
 import { errorText } from './lib/errors'
+import { syncSignature } from './lib/sync-signature'
+import { mergePage } from '../shared/paging'
 import { displayAddress } from './lib/utils'
 import { Compose } from './components/Compose'
 import { Contacts } from './components/Contacts'
@@ -126,6 +128,7 @@ export default function App() {
   const [defaultSignature, setDefaultSignature] = useState('')
   const [signatureMode, setSignatureMode] = useState<SignatureMode>('shared')
   const [allowRemoteImages, setAllowRemoteImages] = useState(false)
+  const [metadataRetentionDays, setMetadataRetentionDays] = useState(0)
   const [storage, setStorage] = useState<StorageOptions>({ drive: true, r2: false })
   const [health, setHealth] = useState<HealthStatus | null>(null)
   const [selectedAccountId, setSelectedAccountId] = useState<string>(initialRoute.accountId)
@@ -145,6 +148,9 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [searchScope, setSearchScope] = useState<SearchScope>('all')
   const [searchResults, setSearchResults] = useState<MessageSummary[] | null>(null)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [searchCursor, setSearchCursor] = useState<string | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [searchContacts, setSearchContacts] = useState<Contact[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
@@ -233,6 +239,7 @@ export default function App() {
         setDefaultSignature(settingsResponse.defaultSignature)
         setSignatureMode(settingsResponse.signatureMode)
         setAllowRemoteImages(settingsResponse.allowRemoteImages)
+        setMetadataRetentionDays(settingsResponse.metadataRetentionDays)
       }
       if (filtersResponse) {
         setFilters(filtersResponse.filters)
@@ -326,6 +333,7 @@ export default function App() {
     syncSignatureRef.current = ''
     setListLoaded(false)
     setMessages([])
+    setNextCursor(null)
     setSelectedIds([])
     setHiddenIds([])
   }, [selectedAccountId, folder, selectedLabelId])
@@ -342,6 +350,7 @@ export default function App() {
           return
         }
         setMessages(response.messages)
+        setNextCursor(response.nextCursor ?? null)
         setListErrors(response.errors)
         setSyncingMessages(Boolean(response.syncing))
         setSelectedIds((current) =>
@@ -405,14 +414,7 @@ export default function App() {
         if (cancelled) {
           return
         }
-        const signature = overview.accounts
-          .map(
-            (account) =>
-              `${account.accountId}:${account.folders
-                .map((state) => `${state.folder}:${state.maxUid}`)
-                .join(',')}`,
-          )
-          .join('|')
+        const signature = syncSignature(overview)
         if (syncSignatureRef.current === '') {
           syncSignatureRef.current = signature
           // The first poll may already come after a very fast background sync,
@@ -423,6 +425,9 @@ export default function App() {
           setRefreshKey((key) => key + 1)
         }
         if (!overview.syncing) {
+          // The last batch is already in D1 but the list was rendered before it
+          // landed: refresh once more so the final window is never lost.
+          setRefreshKey((key) => key + 1)
           setSyncingMessages(false)
           return
         }
@@ -541,6 +546,7 @@ export default function App() {
       setSearchContacts([])
       setSearchLoading(false)
       setSearchError(null)
+      setSearchCursor(null)
       return
     }
     let cancelled = false
@@ -558,6 +564,7 @@ export default function App() {
           }
           setSearchResults(response.messages)
           setSearchContacts(response.contacts)
+          setSearchCursor(response.nextCursor ?? null)
           setSearchError(null)
         })
         .catch((error: unknown) => {
@@ -616,6 +623,46 @@ export default function App() {
     }
     return result
   }, [messages, query, searchResults, selectedLabelId, hiddenIds])
+
+  const listHasMore = query.trim() ? Boolean(searchCursor) : Boolean(nextCursor)
+
+  async function loadMore() {
+    const needle = query.trim()
+    const cursor = needle ? searchCursor : nextCursor
+    if (!cursor || loadingMore) {
+      return
+    }
+    setLoadingMore(true)
+    try {
+      if (needle) {
+        const response = await api.search({
+          query: needle,
+          accountId: selectedAccountId,
+          folder: searchScope,
+          before: cursor,
+        })
+        setSearchResults((current) => mergePage(current ?? [], response.messages))
+        setSearchCursor(response.nextCursor ?? null)
+      } else {
+        const response = await api.messages(
+          selectedAccountId,
+          folder,
+          selectedLabelId,
+          cursor,
+        )
+        setMessages((current) => mergePage(current, response.messages))
+        setNextCursor(response.nextCursor ?? null)
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.isUnauthorized) {
+        setAuth('needed')
+        return
+      }
+      setSettingsError(errorText(error, tRef.current))
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   function openCompose(draft: DraftPayload | null, seed: ComposeSeed | null = null) {
     setComposeDraft(draft)
@@ -1098,6 +1145,17 @@ export default function App() {
     }
   }
 
+  async function changeMetadataRetention(value: number) {
+    const previous = metadataRetentionDays
+    setMetadataRetentionDays(value)
+    try {
+      await api.updateSettings({ metadataRetentionDays: value })
+    } catch (error) {
+      setMetadataRetentionDays(previous)
+      setSettingsError(errorText(error, tRef.current))
+    }
+  }
+
   function changeDefaultSenderNew(value: string) {
     setDefaultSenderNew(value)
     try {
@@ -1283,6 +1341,8 @@ export default function App() {
             onReadingPaneChange={changeReadingPane}
             allowRemoteImages={allowRemoteImages}
             onAllowRemoteImagesChange={(value) => void changeAllowRemoteImages(value)}
+            metadataRetentionDays={metadataRetentionDays}
+            onMetadataRetentionChange={(value) => void changeMetadataRetention(value)}
             defaultSenderNew={defaultSenderNew}
             onDefaultSenderNewChange={changeDefaultSenderNew}
             defaultSenderReply={defaultSenderReply}
@@ -1361,6 +1421,9 @@ export default function App() {
                     void runMessageAction([id], action, target)
                   }
                   onSelect={(id) => void selectMessage(id)}
+                  hasMore={listHasMore}
+                  loadingMore={loadingMore}
+                  onLoadMore={() => void loadMore()}
                 />
                 <ReadingPane
                   message={detail}
@@ -1469,6 +1532,9 @@ export default function App() {
                   void runMessageAction([id], action, target)
                 }
                 onSelect={(id) => void selectMessage(id)}
+                hasMore={listHasMore}
+                loadingMore={loadingMore}
+                onLoadMore={() => void loadMore()}
               />
             )}
           </div>

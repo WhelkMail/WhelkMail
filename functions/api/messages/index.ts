@@ -15,6 +15,12 @@ import { imapMessageId, parseImapMessageId, parseRelayMessageId } from '../../_l
 import { dateOf, parseHeaders, toMailbox, toMailboxes } from '../../_lib/mail/parse'
 import { isSchemaError } from '../../_lib/schema'
 import {
+  clampPageSize,
+  decodePageCursor,
+  pageOf,
+  type PageCursor,
+} from '../../../shared/paging'
+import {
   getSyncState,
   imapMessageSummary,
   listMirrorMessages,
@@ -115,13 +121,23 @@ async function summariesFromRelay(
   env: Env,
   account: AccountRow,
   folder: Folder,
+  limit: number,
+  before: PageCursor | null,
 ): Promise<MessageSummary[]> {
   const result = await env.DB.prepare(
-    'SELECT * FROM messages WHERE account_id = ? AND folder = ? ORDER BY sent_at DESC LIMIT 30',
+    `SELECT * FROM messages WHERE account_id = ? AND folder = ?${pageClause(before)} ORDER BY sent_at DESC, id DESC LIMIT ?`,
   )
-    .bind(account.id, folder)
+    .bind(account.id, folder, ...pageParams(before), limit)
     .all<MessageRow>()
   return result.results.map((row) => relayMessageSummary(row, account))
+}
+
+function pageClause(before: PageCursor | null): string {
+  return before ? ' AND (sent_at < ? OR (sent_at = ? AND id < ?))' : ''
+}
+
+function pageParams(before: PageCursor | null): string[] {
+  return before ? [before.date, before.date, before.id] : []
 }
 
 async function summariesFromImapLabel(
@@ -177,15 +193,22 @@ async function loadMirrorByLabel(
   env: Env,
   accounts: AccountRow[],
   labelId: string,
+  limit: number,
+  before: PageCursor | null,
 ): Promise<MessageSummary[]> {
   if (accounts.length === 0) {
     return []
   }
   const placeholders = accounts.map(() => '?').join(', ')
   const rows = await env.DB.prepare(
-    `SELECT m.* FROM imap_messages m JOIN message_labels ml ON ml.message_id = m.id WHERE ml.label_id = ? AND m.account_id IN (${placeholders}) ORDER BY m.sent_at DESC LIMIT 100`,
+    `SELECT m.* FROM imap_messages m JOIN message_labels ml ON ml.message_id = m.id WHERE ml.label_id = ? AND m.account_id IN (${placeholders})${before ? ' AND (m.sent_at < ? OR (m.sent_at = ? AND m.id < ?))' : ''} ORDER BY m.sent_at DESC, m.id DESC LIMIT ?`,
   )
-    .bind(labelId, ...accounts.map((account) => account.id))
+    .bind(
+      labelId,
+      ...accounts.map((account) => account.id),
+      ...(before ? [before.date, before.date, before.id] : []),
+      limit,
+    )
     .all<ImapMessageRow>()
   const byId = new Map(accounts.map((account) => [account.id, account]))
   return rows.results
@@ -200,9 +223,11 @@ async function loadByLabel(
   env: Env,
   accounts: AccountRow[],
   labelId: string,
+  limit: number,
+  before: PageCursor | null,
 ): Promise<{ messages: MessageSummary[]; errors: AccountError[] }> {
   try {
-    const mirrored = await loadMirrorByLabel(env, accounts, labelId)
+    const mirrored = await loadMirrorByLabel(env, accounts, labelId, limit, before)
     if (mirrored.length > 0) {
       const groups = new Map<string, MessageSummary[]>()
       for (const message of mirrored) {
@@ -316,6 +341,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const accountId = url.searchParams.get('accountId') ?? 'all'
   const folderParam = url.searchParams.get('folder')
   const labelId = url.searchParams.get('labelId')
+  const before = decodePageCursor(url.searchParams.get('before'))
+  const limit = clampPageSize(Number(url.searchParams.get('limit') ?? ''))
   const folder: Folder =
     folderParam === 'sent'
       ? 'sent'
@@ -337,9 +364,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   if (labelId) {
-    const { messages, errors } = await loadByLabel(context.env, accounts, labelId)
-    messages.sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
-    return json({ messages: messages.slice(0, 100), errors })
+    const { messages, errors } = await loadByLabel(context.env, accounts, labelId, limit, before)
+    messages.sort(
+      (left, right) =>
+        new Date(right.date).getTime() - new Date(left.date).getTime() ||
+        left.id.localeCompare(right.id),
+    )
+    const page = pageOf(messages, limit)
+    return json({ messages: page.items, errors, nextCursor: page.nextCursor })
   }
 
   const messages: MessageSummary[] = []
@@ -364,7 +396,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         let mirrored: MessageSummary[] = []
         const mirrorStartedAt = Date.now()
         try {
-          mirrored = await listMirrorMessages(context.env, account, folder)
+          mirrored = await listMirrorMessages(context.env, account, folder, limit, before)
           syncState = await getSyncState(context.env, account.id, folder)
         } catch (error) {
           if (!isSchemaError(error)) {
@@ -380,7 +412,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
           try {
             const result = await runSyncChunk(context.env, account, folder)
             const rereadStartedAt = Date.now()
-            mirrored = await listMirrorMessages(context.env, account, folder)
+            mirrored = await listMirrorMessages(context.env, account, folder, limit, before)
             mirrorMs += Date.now() - rereadStartedAt
             loaded =
               mirrored.length > 0
@@ -415,7 +447,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
           }
         }
       } else {
-        loaded = await summariesFromRelay(context.env, account, folder)
+        loaded = await summariesFromRelay(context.env, account, folder, limit, before)
       }
 
       await applyLabels(context.env, loaded)
@@ -434,6 +466,11 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     }
   }
 
-  messages.sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
-  return json({ messages: messages.slice(0, 100), errors, syncing })
+  messages.sort(
+    (left, right) =>
+      new Date(right.date).getTime() - new Date(left.date).getTime() ||
+      left.id.localeCompare(right.id),
+  )
+  const page = pageOf(messages, limit)
+  return json({ messages: page.items, errors, syncing, nextCursor: page.nextCursor })
 }

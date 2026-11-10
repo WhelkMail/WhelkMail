@@ -6,3 +6,15 @@
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Cross-Origin-Opener-Policy: same-origin
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; worker-src 'self'; manifest-src 'self'
+
+# The service worker must be revalidated on every visit, otherwise a push
+# notification keeps using the previous icon/badge for days.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Notification assets are content-stable: bump the name when they change.
+/notification-badge.png
+  Cache-Control: public, max-age=604800
+
+/notification-icon.png
+  Cache-Control: public, max-age=604800

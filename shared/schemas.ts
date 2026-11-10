@@ -204,5 +204,6 @@ export const appSettingsSchema = z.object({
   defaultSignature: z.string().max(5000).optional(),
   signatureMode: z.enum(['shared', 'per_account']).optional(),
   allowRemoteImages: z.boolean().optional(),
+  metadataRetentionDays: z.number().int().min(0).max(3650).optional(),
 })
 

@@ -7,13 +7,23 @@ import type {
 } from '../../shared/types'
 import type { AccountRow } from './db'
 import type { Env } from './env'
+import type { PageCursor } from '../../shared/paging'
 import type { ImapConnection, ImapHeader } from './imap/client'
 import { MISSING_FOLDER, withImap, resolveFolderName } from './mail/imap'
 import { applyAccountLabel, applyFilters } from './filters'
 import { getImapArchiveStorage, type StorageAdapter } from './storage'
 import { imapMessageId } from './mail/ids'
-import { dateOf, parseHeaders, toMailbox, toMailboxes } from './mail/parse'
+import { bodyText, dateOf, parseFull, parseHeaders, toMailbox, toMailboxes } from './mail/parse'
+import { indexMessageText } from './mail/search-text'
 import { isSchemaError } from './schema'
+import {
+  advanceSyncWindow,
+  isBackfillComplete,
+  MAX_INDEXED_BODY_BYTES,
+  shouldResetOnUidValidity,
+  shouldResumeBackfill,
+  SNIPPET_BATCH,
+} from './sync-plan'
 
 export const SYNC_FOLDERS: Folder[] = ['inbox', 'sent', 'draft', 'spam']
 const CHUNK_SIZE = 40
@@ -50,6 +60,7 @@ export interface ImapMessageRow {
   bcc_json: string
   subject: string
   snippet: string
+  search_text: string
   sent_at: string
   size: number
   unread: number
@@ -149,12 +160,22 @@ export async function listMirrorMessages(
   account: AccountRow,
   folder: Folder,
   limit = 100,
+  before?: PageCursor | null,
 ): Promise<MessageSummary[]> {
-  const rows = await env.DB.prepare(
-    'SELECT * FROM imap_messages WHERE account_id = ? AND folder = ? ORDER BY sent_at DESC LIMIT ?',
-  )
-    .bind(account.id, folder, limit)
-    .all<ImapMessageRow>()
+  const rows = before
+    ? await env.DB.prepare(
+        `SELECT * FROM imap_messages
+         WHERE account_id = ? AND folder = ?
+           AND (sent_at < ? OR (sent_at = ? AND id < ?))
+         ORDER BY sent_at DESC, id DESC LIMIT ?`,
+      )
+        .bind(account.id, folder, before.date, before.date, before.id, limit)
+        .all<ImapMessageRow>()
+    : await env.DB.prepare(
+        'SELECT * FROM imap_messages WHERE account_id = ? AND folder = ? ORDER BY sent_at DESC, id DESC LIMIT ?',
+      )
+        .bind(account.id, folder, limit)
+        .all<ImapMessageRow>()
   return rows.results.map((row) => imapMessageSummary(row, account))
 }
 
@@ -409,6 +430,47 @@ async function backfillUids(
     .slice(-limit)
 }
 
+/**
+ * Fill `snippet` and `search_text` for messages that were mirrored from headers
+ * only.
+ *
+ * IMAP search runs against the D1 mirror, and a header-only mirror can only
+ * match sender, recipients and subject. A few bodies per chunk (newest first)
+ * slowly turn the mirror into something worth searching without turning every
+ * sync into a full download.
+ */
+async function backfillSnippets(
+  env: Env,
+  connection: ImapConnection,
+  account: AccountRow,
+  folder: Folder,
+  limit = SNIPPET_BATCH,
+): Promise<number> {
+  const pending = await env.DB.prepare(
+    `SELECT id, uid FROM imap_messages
+     WHERE account_id = ? AND folder = ? AND snippet = '' AND size <= ?
+     ORDER BY uid DESC LIMIT ?`,
+  )
+    .bind(account.id, folder, MAX_INDEXED_BODY_BYTES, limit)
+    .all<{ id: string; uid: number }>()
+  let indexed = 0
+  for (const row of pending.results) {
+    try {
+      const bytes = await connection.fetchFull(row.uid)
+      const email = await parseFull(bytes)
+      const text = bodyText(email)
+      if (!text.trim()) {
+        continue
+      }
+      await indexMessageText(env, row.id, text)
+      indexed += 1
+    } catch {
+      // Transient fetch errors: the next chunk retries the same messages.
+    }
+  }
+  return indexed
+}
+
 const SYNC_LOCK_TTL_MS = 5 * 60 * 1000
 
 interface SyncLock {
@@ -540,6 +602,7 @@ async function runSyncChunkLocked(
   const archiveBodies = Boolean(archiveStorage)
   const chunkSize = archiveBodies ? 8 : CHUNK_SIZE
   let archiveMore = false
+  let indexedSnippets = 0
 
   const syncStartedAt = Date.now()
 
@@ -564,7 +627,7 @@ async function runSyncChunkLocked(
     uidValidity = details.uidValidity
     const uidNext = details.uidNext
 
-    if (row?.uid_validity && details.uidValidity && row.uid_validity !== details.uidValidity) {
+    if (shouldResetOnUidValidity(row?.uid_validity, details.uidValidity)) {
       await env.DB.batch([
         env.DB.prepare('DELETE FROM message_labels WHERE account_id = ? AND folder = ?').bind(
           account.id,
@@ -586,10 +649,10 @@ async function runSyncChunkLocked(
       backfillDone = false
     }
 
-    if (backfillDone && details.exists !== null && row && row.synced < details.exists) {
+    if (backfillDone && shouldResumeBackfill(row, details.exists)) {
       backfillDone = false
       console.log(
-        `[sync] ${account.id}/${folder} resuming incomplete backfill mirror=${row.synced} total=${details.exists}`,
+        `[sync] ${account.id}/${folder} resuming incomplete backfill mirror=${row?.synced ?? 0} total=${details.exists}`,
       )
     }
 
@@ -656,6 +719,7 @@ async function runSyncChunkLocked(
             bcc_json: JSON.stringify(toMailboxes(email.bcc)),
             subject: email.subject ?? '',
             snippet: '',
+            search_text: '',
             sent_at: dateOf(email),
             size: header.size,
             unread:
@@ -725,6 +789,11 @@ async function runSyncChunkLocked(
           }
           try {
             const bytes = await connection.fetchFull(item.header.uid)
+            try {
+              await indexMessageText(env, item.id, bodyText(await parseFull(bytes)))
+            } catch {
+              // Indexing is best effort; the snippet backfill retries later.
+            }
             const key = `imap/${account.id}/${folder}/${details.uidValidity ?? 0}/${folder}-${item.header.uid}.eml`
             const stored = await archiveStorage.put(key, bytes, 'message/rfc822')
             updates.push(
@@ -742,14 +811,9 @@ async function runSyncChunkLocked(
         }
       }
 
-      const fetchedMin = Math.min(...uidsToFetch)
-      const fetchedMax = Math.max(...uidsToFetch)
-      if (phase === 'new') {
-        maxUid = maxUid === 0 ? fetchedMax : Math.max(maxUid, fetchedMax)
-        minUid = minUid === 0 ? fetchedMin : Math.min(minUid, fetchedMin)
-      } else {
-        minUid = minUid === 0 ? fetchedMin : Math.min(minUid, fetchedMin)
-      }
+      const nextWindow = advanceSyncWindow({ maxUid, minUid }, uidsToFetch, phase)
+      maxUid = nextWindow.maxUid
+      minUid = nextWindow.minUid
     }
 
     if (archiveStorage) {
@@ -766,6 +830,11 @@ async function runSyncChunkLocked(
         }
         try {
           const bytes = await connection.fetchFull(item.uid)
+          try {
+            await indexMessageText(env, item.id, bodyText(await parseFull(bytes)))
+          } catch {
+            // Indexing is best effort; the snippet backfill retries later.
+          }
           const key = `imap/${account.id}/${folder}/${details.uidValidity ?? 0}/${folder}-${item.uid}.eml`
           const stored = await archiveStorage.put(key, bytes, 'message/rfc822')
           updates.push(
@@ -809,6 +878,9 @@ async function runSyncChunkLocked(
       }
     }
 
+    await renewSyncLock(env, account.id, folder, lock)
+    indexedSnippets = await backfillSnippets(env, connection, account, folder)
+
     let hasOlder = false
     if (!backfillDone) {
       if (details.exists === 0 || minUid <= 1) {
@@ -816,11 +888,12 @@ async function runSyncChunkLocked(
       } else {
         try {
           const lowest = await connection.firstUid()
-          if (lowest !== null && lowest >= minUid) {
-            backfillDone = true
-          } else {
-            hasOlder = true
-          }
+          backfillDone = isBackfillComplete({
+            exists: details.exists,
+            minUid,
+            lowestUid: lowest,
+          })
+          hasOlder = !backfillDone
         } catch {
           hasOlder = true
         }
@@ -871,7 +944,7 @@ async function runSyncChunkLocked(
   })
 
   console.log(
-    `[sync] ${account.id}/${folder} ${Date.now() - syncStartedAt}ms maxUid=${maxUid} minUid=${minUid} backfillDone=${backfillDone}`,
+    `[sync] ${account.id}/${folder} ${Date.now() - syncStartedAt}ms maxUid=${maxUid} minUid=${minUid} backfillDone=${backfillDone} indexed=${indexedSnippets}`,
   )
 
   const folders = await getSyncStates(env, account.id)

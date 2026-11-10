@@ -12,6 +12,9 @@ export interface PushPayload {
   body: string
   url?: string
   tag?: string
+  /** Optional overrides for the notification images (must be bitmaps on Android). */
+  icon?: string
+  badge?: string
 }
 
 const encoder = new TextEncoder()

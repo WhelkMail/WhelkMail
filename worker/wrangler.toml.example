@@ -1,0 +1,23 @@
+# Template for the notification cron worker.
+#
+# Copy it to worker/wrangler.toml (gitignored) and set APP_URL:
+#   cp worker/wrangler.toml.example worker/wrangler.toml
+#   npm run cron:deploy
+#
+# npm run cron:deploy creates the file for you when it is missing and stops with
+# an error until APP_URL points at your own Pages deployment.
+
+name = "whelkmail-cron"
+main = "index.ts"
+compatibility_date = "2026-11-01"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+# Your WhelkMail Pages URL, for example https://whelkmail.example.pages.dev
+APP_URL = ""
+
+# The shared secret is not stored here. Set it once before deploying:
+#   npx wrangler secret put CRON_SECRET -c worker/wrangler.toml
+# Use the same value for CRON_SECRET on the Pages project.

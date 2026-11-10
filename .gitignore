@@ -13,13 +13,25 @@ node_modules
 dist
 dist-ssr
 *.local
+coverage/
+.vitest/
+*.tsbuildinfo
+
+# Local environment and secrets.
+# Wrangler also reads environment-specific files such as .dev.vars.production,
+# so the pattern has to cover the suffixes too.
 .dev.vars
+.dev.vars.*
+!.dev.vars.example
 .env
 .env.*
 !.env.example
 .wrangler
-# Personal deployment config; use wrangler.toml.example as a template.
+
+# Personal deployment config; start from the .example templates.
+# Both the Pages config and the cron worker config contain account-scoped values.
 wrangler.toml
+worker/wrangler.toml
 
 # Editor directories and files
 .vscode/*
