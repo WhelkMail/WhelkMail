@@ -7,6 +7,7 @@ import { loadRaw } from '../../../_lib/mail/load'
 import { markMessageSeen } from '../../../_lib/mail/imap'
 import { parseImapMessageId, parseRelayMessageId } from '../../../_lib/mail/ids'
 import {
+  aliasAddresses,
   attachmentMeta,
   bodyText,
   dateOf,
@@ -137,6 +138,7 @@ async function relayDetail(env: Env, id: string): Promise<MessageDetail | null> 
     unread: false,
     hasAttachments: attachments.length > 0,
     status: row.status === 'failed' ? 'failed' : row.status === 'draft' ? 'draft' : 'sent',
+    aliasAddresses: [],
     text: row.body_text,
     html: row.body_html,
     attachments,
@@ -189,6 +191,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     unread: false,
     hasAttachments: attachments.length > 0,
     status: loaded.folder === 'draft' ? 'draft' : 'sent',
+    aliasAddresses: aliasAddresses(email),
     text,
     html: email.html ? inlineCidImages(email, email.html) : null,
     attachments,

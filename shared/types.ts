@@ -208,6 +208,8 @@ export interface MessageSummary {
 }
 
 export interface MessageDetail extends MessageSummary {
+  /** Addresses from Delivered-To/X-Original-To/Received that reveal a forwarding alias. */
+  aliasAddresses: string[]
   text: string
   html: string | null
   attachments: AttachmentMeta[]

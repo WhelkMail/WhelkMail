@@ -204,7 +204,7 @@ const en: Record<string, string> = {
   'settings.replyAs': 'Reply as',
   'settings.replyAsNone': 'This account (default)',
   'settings.replyAsHint':
-    'Replies to messages received here leave from the account you pick. Use it when your domain forwards to this mailbox and only sends through a relay account.',
+    'Normally a reply leaves from the account whose address received the message (detected from the To/Cc and the forwarding headers), so a domain that forwards here is used automatically. Pick an account only to force a different sender.',
   'settings.sentFolder': 'Sent folder',
   'settings.autoSaveSent': 'Provider already saves sent mail (no APPEND)',
   'settings.sentCopy': 'Sent copy',
@@ -779,7 +779,7 @@ const it: Record<string, string> = {
   'settings.replyAs': 'Rispondi come',
   'settings.replyAsNone': 'Questo account (predefinito)',
   'settings.replyAsHint':
-    'Le risposte ai messaggi ricevuti qui partono dall’account che scegli. Utile quando il dominio inoltra su questa casella e invia solo tramite un account relay.',
+    'Normalmente la risposta parte dall’account a cui il messaggio era indirizzato (ricavato da To/Cc e dalle intestazioni di inoltro), quindi il dominio che inoltra qui viene usato in automatico. Scegli un account solo per forzare un mittente diverso.',
   'settings.sentFolder': 'Cartella inviate',
   'settings.autoSaveSent': 'Il provider salva già le inviate (nessun APPEND)',
   'settings.sentCopy': 'Copia inviata',

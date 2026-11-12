@@ -711,11 +711,36 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
+  /**
+   * Account whose address received the message, when the mailbox that stores it
+   * is just a forwarding destination (EMAIL@DOMAIN.IT → EMAIL@PROVIDER.IT).
+   * Only accounts that can send are considered.
+   */
+  function aliasAccountFor(message: MessageDetail): string | null {
+    const addresses = new Set(
+      [
+        ...(message.aliasAddresses ?? []),
+        ...message.to.map((item) => item.email),
+        ...message.cc.map((item) => item.email),
+      ]
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean),
+    )
+    const match = accounts.find(
+      (item) =>
+        item.id !== message.accountId &&
+        (item.kind === 'relay' ? item.relayConfigured : item.connected) &&
+        addresses.has(item.email.toLowerCase()),
+    )
+    return match?.id ?? null
+  }
+
   function replyTo(message: MessageDetail, all: boolean) {
     const receivingAccount = accounts.find((item) => item.id === message.accountId)
     const sendingAccountId = pickReplySender({
       messageAccountId: message.accountId,
       replyAccountId: receivingAccount?.replyAccountId ?? null,
+      aliasAccountId: aliasAccountFor(message),
       defaultSender: defaultSenderReply,
       accountIds: accounts.map((item) => item.id),
     })

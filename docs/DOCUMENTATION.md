@@ -83,7 +83,13 @@ Key constraints:
 
 ### Reply
 
-1. The reply composer takes its sender from `pickReplySender`: the receiving account's `reply_account_id` first, then the global "reply sender" preference (`auto` by default), then the account that received the message.
+1. The reply composer takes its sender from `pickReplySender`, in this order:
+   - `accounts.reply_account_id` of the mailbox that received the message (explicit override);
+   - the account whose address is the alias the message was actually sent to: `aliasAddresses()` collects `Delivered-To`, `X-Delivered-To`, `X-Original-To`, `Envelope-To`, `X-Envelope-To`, `X-Forwarded-To`, `Resent-To`, `Apparently-To` and `Received … for <addr>`, and the client also looks at the message To/Cc. Only accounts that can send are considered (relay configured, or IMAP connected);
+   - the global "reply sender" preference (`auto` by default);
+   - the account that received the message.
+
+   The alias step is what makes a forwarding domain work like Gmail: mail addressed to `EMAIL@DOMAIN.IT` and forwarded to `EMAIL@PROVIDER.IT` keeps that address in the headers, so the reply leaves from the domain account.
 2. Everything else is the normal send flow, so the reply leaves through the chosen account's own SMTP/relay and its copy follows that account's destination. Addresses of both accounts are excluded from To/Cc to avoid replying to yourself.
 
 ### Drafts

@@ -84,3 +84,53 @@ export function stripHtml(html: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
+
+/**
+ * Addresses that reveal which of *your* addresses received the message.
+ *
+ * A domain that only forwards (`EMAIL@DOMAIN.IT` → `EMAIL@PROVIDER.IT`) leaves
+ * traces in the headers: the original `To` often survives, and forwarders add
+ * `Delivered-To`, `X-Original-To`, `Envelope-To` or a `Received ... for <addr>`.
+ * The reply composer uses these to answer from the address the message was
+ * actually sent to, like Gmail does with its aliases.
+ */
+const ALIAS_HEADERS = new Set([
+  'delivered-to',
+  'x-delivered-to',
+  'x-original-to',
+  'envelope-to',
+  'x-envelope-to',
+  'x-forwarded-to',
+  'resent-to',
+  'apparently-to',
+])
+
+const ADDRESS_PATTERN = /[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
+
+export function aliasAddresses(email: Email): string[] {
+  const found = new Set<string>()
+  const add = (value: string | null | undefined): void => {
+    if (!value) {
+      return
+    }
+    for (const match of value.match(ADDRESS_PATTERN) ?? []) {
+      found.add(match.toLowerCase())
+    }
+  }
+
+  add(email.deliveredTo)
+  for (const header of email.headers ?? []) {
+    const key = header.key.toLowerCase()
+    if (ALIAS_HEADERS.has(key)) {
+      add(header.value)
+      continue
+    }
+    if (key === 'received') {
+      const forMatch = header.value.match(/for\s+<?([^\s<>;]+@[^\s<>;]+)>?/i)
+      if (forMatch) {
+        add(forMatch[1])
+      }
+    }
+  }
+  return [...found]
+}
