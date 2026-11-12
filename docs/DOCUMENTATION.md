@@ -11,7 +11,7 @@ WhelkMail is a **webmail client**, not a mail server.
 - It connects to existing mailboxes through IMAP and SMTP.
 - It does not receive mail directly, does not run an MTA, and does not listen on ports 25/143/993/465/587.
 - It does not create mailboxes. Thunderbird and mobile clients can keep connecting to the same provider independently.
-- For domains with no SMTP, a separate **relay account** type sends through an HTTP email API and archives sent copies/drafts on Google Drive or Cloudflare R2; it can also append each sent message to the Sent folder of an IMAP account.
+- For domains with no SMTP, a separate **relay account** type sends through an HTTP email API and keeps sent copies/drafts on Google Drive, Cloudflare R2 or in the Sent/Drafts folders of another IMAP account.
 
 ## 2. Architecture
 
@@ -69,15 +69,34 @@ Key constraints:
 3. **IMAP account:** authenticate and send through the account's own SMTP.
 4. If `auto_saves_sent` is false, the same MIME is appended to the provider's Sent folder (`\Sent`, fallback `Sent`).
 5. If `draftId` is present, the original draft is deleted.
-6. **Relay account:** store the `.eml` in Drive/R2, send through the selected HTTP relay, record metadata in D1, then append the same MIME to the Sent folder of the IMAP account selected in `sent_copy_account_id` (if any). The append is best-effort: a failure is returned as a warning next to the successful send, and a Sent sync is queued for the target account.
+6. **Relay account:** store the `.eml` on the destination chosen in `storage_driver`, send through the selected HTTP relay, then record metadata in D1.
+   - `drive` / `r2`: the object is written before the send, so a failed send still has its copy.
+   - `imap`: nothing is written to object storage; the same MIME is appended to the Sent folder of the account in `sent_copy_account_id` after the relay accepts the message, `storage_key` keeps a pointer (`imap:<account>:<folder>:<uid>`) and a Sent sync is queued for that account. If the append fails the message is still recorded and returned with a warning; its body stays readable from D1.
 
 ### Drafts
 
 - **IMAP:** `APPEND` to the `\Drafts` folder with `\Draft \Seen`; delete with `UID STORE +FLAGS (\Deleted)` + `EXPUNGE`.
-- **Relay:** MIME stored on Drive/R2 (`drafts/<id>.eml`), metadata in D1 with `folder='draft'`.
-- Autosave runs 5 seconds after the last change and every 30 seconds while changes remain. Closing the composer saves pending changes first.
-- On IMAP, autosave appends a new draft and deletes the previous one. The new UID comes from `APPENDUID` when the server supports UIDPLUS, otherwise from the highest UID in the Drafts folder.
+- **Relay, `storage_driver = 'drive' | 'r2'`:** the MIME is stored on the object archive (`drafts/<id>.eml`, or `accounts/<id>/drafts/<id>.eml` for R2), metadata in D1 with `folder='draft'`.
+- **Relay, `storage_driver = 'imap'`:** the draft is appended to the Drafts folder of the account in `sent_copy_account_id`, exactly like a draft written from that account. Nothing is written to Drive or R2.
+  - The folder is resolved against the **target** account: its `drafts_folder` first, then the `\Drafts` special-use flag, then the known names (`Drafts`, `INBOX.Drafts`, `INBOX/Drafts`, `Bozze`, `INBOX.Bozze`, `Bozza`, `INBOX.Bozza`, `Draft`, `INBOX.Draft`). A missing folder is created with `CREATE` and the append retried.
+  - Flags are `(\Draft \Seen)`. The UID comes from `APPENDUID` when the server supports UIDPLUS, otherwise from the folder's `UIDNEXT - 1` or from the highest UID after a search.
+  - The row in `messages` keeps `folder='draft'`, `storage_driver='imap'` and a pointer in `storage_key` (`imap:<accountId>:<encodedFolder>:<uid>`). Reopening the draft fetches that message back with `UID FETCH`; autosave appends the new version and expunges the previous copy; deleting the draft or sending from it removes the copy from that mailbox.
+  - There is **no fallback to Drive/R2** in this mode. If the target account is missing or not connected, saving fails with `sent_copy_target_not_connected`; IMAP failures return `draft_save_failed`. The composer shows the error and can still be closed (with confirmation) instead of trapping the message.
+  - The same draft is visible twice in the UI: as the relay account's row in **Drafts** (D1) and, once the target folder is synced, as a real message in that account's Drafts folder.
+- Autosave runs 5 seconds after the last change and every 30 seconds while changes remain. Closing the composer saves pending changes first; if the draft cannot be saved the user is asked whether to discard it.
 - An explicit **Save draft** closes the composer and opens the Drafts folder.
+
+### Where a send-only account keeps its copies
+
+`storage_driver` picks **one** destination per relay account; the two mailbox modes never run together with the object archive:
+
+| `storage_driver` | Sent copies | Drafts | Requirement |
+| --- | --- | --- | --- |
+| `drive` | `sent/<id>.eml` on Google Drive | `drafts/<id>.eml` on Google Drive | Google Drive connected |
+| `r2` | `accounts/<id>/sent/<id>.eml` in R2 | `accounts/<id>/drafts/<id>.eml` in R2 | `BUCKET` binding |
+| `imap` | `APPEND` to the target account's Sent folder | `APPEND` to the target account's Drafts folder | `sent_copy_account_id` pointing at a connected IMAP account |
+
+Switching back to `drive` or `r2` clears `sent_copy_account_id`. Copies appended to a mailbox are real messages on the provider: deleting the account or a row in D1 never deletes them.
 
 ## 4. Project structure
 
@@ -116,18 +135,20 @@ Important fields:
 - `access_token_enc`, `access_token_expires_at`
 - `oauth_provider`: currently `microsoft`
 - `sent_folder`, `drafts_folder`, `spam_folder`, `auto_saves_sent`
-- `sent_copy_account_id`: optional IMAP account that receives a copy of every message sent from this relay account (relay accounts only)
+- `sent_copy_account_id`: IMAP account that stores sent copies and drafts when `storage_driver` is `imap` (relay accounts only)
 - `signature`: optional per-account signature, used only when `signature_mode` is `per_account`
 - `incoming_label_id`: optional shared label applied automatically to every incoming message of this account
 - `delete_after_archive`: opt-in provider cleanup; archived incoming messages are moved to the provider Trash
 - `auto_sync`: opt-in automatic background sync for Inbox, Sent, Drafts and Spam via the cron worker
-- `storage_driver`: `provider`, `drive` or `r2`
+- `storage_driver`: `provider`, `drive`, `r2` or `imap` (relay accounts only: `imap` = the mailbox of `sent_copy_account_id` instead of an object archive)
 - `relay_provider`, `relay_api_key_enc`, `relay_api_secret_enc`, `relay_domain`, `relay_region`
 - `drive_*` fields for the optional Drive archive
 
 ### `messages`
 
 Used for relay accounts: sent copies and drafts. IMAP messages are read from the provider and mirrored in `imap_messages`; the optional sync keeps metadata current, while recent bodies are held in the short-lived D1 cache. Full bodies are copied to R2/Drive only when long-term archiving is enabled.
+
+When a relay account stores copies in an IMAP mailbox, `storage_key` holds a pointer (`imap:<accountId>:<encodedFolder>:<uid>`) instead of an object key: the body and attachments are read from that mailbox, and the copy is removed there when the message or draft is deleted. Account deletion never touches those messages.
 
 Fields include folder, addresses JSON, subject, snippet, body text/HTML, size, storage key, attachment metadata and status.
 

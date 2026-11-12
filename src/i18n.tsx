@@ -22,6 +22,7 @@ const en: Record<string, string> = {
   'common.language': 'Language',
   'labels.all': 'All',
   'labels.new': 'New label',
+  'labels.edit': 'Edit label “{name}”',
   'labels.name': 'Label name',
   'labels.create': 'Create label',
   'labels.empty': 'No labels yet',
@@ -150,6 +151,8 @@ const en: Record<string, string> = {
   'compose.provider': 'Provider',
   'compose.attachmentsTooLarge': 'Attachments too large: {limit} MB limit',
   'compose.invalidAddress': 'Invalid address: {address}',
+  'compose.closeWithoutSaving':
+    'The draft could not be saved. Close the message and discard it?',
   'compose.recipientRequired': 'Add at least one recipient',
   'compose.accountRequired': 'Select a sender account',
   'compose.driveNotConnected':
@@ -205,10 +208,14 @@ const en: Record<string, string> = {
   'settings.sentClient': 'The client saves it via IMAP (recommended for other providers)',
   'settings.sentHint':
     'Choose “provider” only if your mail service already stores sent messages in Sent. If unsure, choose “client”.',
-  'settings.sentCopyTarget': 'Also append the sent copy to',
-  'settings.sentCopyTargetNone': 'No other account',
+  'settings.sentCopyTarget': 'Store the sent copy in',
+  'settings.sentCopyTargetNone': 'No — keep the Drive/R2 archive',
   'settings.sentCopyTargetHint':
-    'The copy stays on Drive or R2 as usual; the same message is also saved in the Sent folder of the account you pick here. Only connected IMAP accounts are listed.',
+    'Sent copies and drafts are appended to that mailbox instead of being stored on Drive or R2. Only connected IMAP accounts are listed.',
+  'settings.sentCopyTargetEmpty':
+    'No connected IMAP account yet: add one to keep sent copies in a mailbox.',
+  'settings.sentCopyMailbox': "Another account's mailbox",
+  'settings.sentCopyMailboxNote': 'Append to its Sent and Drafts folders',
   'settings.updatePassword': 'Update password / app password',
   'settings.savePassword': 'Save password',
   'settings.testConnection': 'Test connection',
@@ -477,6 +484,7 @@ const en: Record<string, string> = {
   'onboarding.relayHint': 'Send via HTTP relay, archive on Drive/R2.',
   'onboarding.sentCopyTargetEmpty':
     'No connected IMAP account yet: add one first to also keep sent mail in a real mailbox.',
+  'onboarding.sentCopyRequired': 'Choose the IMAP account that stores the sent copy',
   'onboarding.hostsRequired': 'IMAP and SMTP hosts are required',
   'onboarding.passwordRequired': 'Enter the password or app password',
   'onboarding.oauthNotConfigured': 'Microsoft OAuth is not configured on the server',
@@ -567,6 +575,7 @@ const it: Record<string, string> = {
   'common.language': 'Lingua',
   'labels.all': 'Tutti',
   'labels.new': 'Nuova etichetta',
+  'labels.edit': 'Modifica etichetta “{name}”',
   'labels.name': 'Nome etichetta',
   'labels.create': 'Crea etichetta',
   'labels.empty': 'Nessuna etichetta',
@@ -695,6 +704,8 @@ const it: Record<string, string> = {
   'compose.provider': 'Provider',
   'compose.attachmentsTooLarge': 'Allegati troppo grandi: limite {limit} MB',
   'compose.invalidAddress': 'Indirizzo non valido: {address}',
+  'compose.closeWithoutSaving':
+    'La bozza non è stata salvata. Chiudere il messaggio e scartarlo?',
   'compose.recipientRequired': 'Inserisci almeno un destinatario',
   'compose.accountRequired': 'Seleziona un account mittente',
   'compose.driveNotConnected':
@@ -753,10 +764,14 @@ const it: Record<string, string> = {
   'settings.sentClient': 'La salva il client via IMAP (consigliato per gli altri provider)',
   'settings.sentHint':
     'Scegli “provider” solo se il servizio mette già le email inviate in Sent. Se non sei sicuro, scegli “client”.',
-  'settings.sentCopyTarget': 'Copia le inviate anche nella cartella inviate di',
-  'settings.sentCopyTargetNone': 'Nessun altro account',
+  'settings.sentCopyTarget': 'Salva la copia delle inviate in',
+  'settings.sentCopyTargetNone': 'No — usa l’archivio Drive/R2',
   'settings.sentCopyTargetHint':
-    'La copia resta su Drive o R2 come sempre; lo stesso messaggio viene salvato anche nella cartella inviate dell’account scelto qui. Compaiono solo gli account IMAP collegati.',
+    'Le inviate e le bozze vengono accodate in quella casella invece di essere salvate su Drive o R2. Compaiono solo gli account IMAP collegati.',
+  'settings.sentCopyTargetEmpty':
+    'Nessun account IMAP collegato: aggiungine uno per tenere le inviate in una casella.',
+  'settings.sentCopyMailbox': 'Casella di un altro account',
+  'settings.sentCopyMailboxNote': 'Accoda nelle sue cartelle inviate e bozze',
   'settings.updatePassword': 'Aggiorna password / app password',
   'settings.savePassword': 'Salva password',
   'settings.testConnection': 'Verifica connessione',
@@ -1027,6 +1042,7 @@ const it: Record<string, string> = {
   'onboarding.relayHint': 'Invio via relay HTTP, archivio su Drive/R2.',
   'onboarding.sentCopyTargetEmpty':
     'Nessun account IMAP collegato: aggiungine uno per tenere le inviate anche in una casella reale.',
+  'onboarding.sentCopyRequired': 'Scegli l’account IMAP che salva la copia delle inviate',
   'onboarding.hostsRequired': 'Host IMAP e SMTP obbligatori',
   'onboarding.passwordRequired': 'Inserisci la password o la password per app',
   'onboarding.oauthNotConfigured': 'OAuth Microsoft non è configurato sul server',

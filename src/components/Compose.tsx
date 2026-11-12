@@ -275,15 +275,21 @@ export function Compose({
   }
 
   async function handleClose() {
-    if (busy || deleting) {
+    if (busy || deleting || savingRef.current) {
       return
     }
     if (!dirty || !hasContent()) {
       onClose()
       return
     }
-    const saved = await persistRef.current(false)
-    if (saved) {
+    if (await persistRef.current(false)) {
+      onClose()
+      return
+    }
+    // The draft could not be saved: an invalid recipient, a storage error or an
+    // offline connection. Never trap the user in the composer — the error stays
+    // visible and closing discards the draft only after an explicit confirmation.
+    if (window.confirm(t('compose.closeWithoutSaving'))) {
       onClose()
     }
   }

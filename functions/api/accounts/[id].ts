@@ -71,15 +71,30 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
   }
   const sentFolder = input.sentFolder ?? row.sent_folder
   const autoSavesSent = input.autoSavesSent === undefined ? row.auto_saves_sent : input.autoSavesSent ? 1 : 0
+  const storageDriver = input.storageDriver ?? row.storage_driver
+  // The IMAP mailbox is an alternative to Drive/R2, not an addition: the target
+  // is only kept while the account stores sent copies in a mailbox.
   const sentCopyAccountId =
-    input.sentCopyAccountId === undefined ? row.sent_copy_account_id : input.sentCopyAccountId
-  if (sentCopyAccountId) {
+    storageDriver === 'imap'
+      ? input.sentCopyAccountId === undefined
+        ? row.sent_copy_account_id
+        : input.sentCopyAccountId
+      : null
+  if (storageDriver === 'imap') {
     if (row.kind !== 'relay') {
       return fail(
-        'Only send-only accounts can copy sent mail into another account',
+        'Only send-only accounts can keep sent copies in another account',
         400,
         undefined,
         'sent_copy_not_supported',
+      )
+    }
+    if (!sentCopyAccountId) {
+      return fail(
+        'Choose the IMAP account that stores the sent copy',
+        400,
+        undefined,
+        'sent_copy_target_required',
       )
     }
     if (sentCopyAccountId === row.id) {
@@ -108,7 +123,6 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
       )
     }
   }
-  const storageDriver = input.storageDriver ?? row.storage_driver
   const username = input.username ?? row.username
   const imapHost = input.imapHost ?? row.imap_host
   const imapPort = input.imapPort ?? row.imap_port

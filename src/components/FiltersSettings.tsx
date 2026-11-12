@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Filter, Pencil, Plus, Send, Tag, Trash2 } from 'lucide-react'
 import type { FilterInput, Label, LabelColor, MailFilter } from '../../shared/types'
 import { useI18n } from '../i18n'
-import { cn, labelStyle } from '../lib/utils'
+import { cn, labelStyle, parseAddresses } from '../lib/utils'
 
 interface FiltersSettingsProps {
   labels: Label[]
@@ -103,14 +103,7 @@ export function FiltersSettings({
         doesntHave.trim() ||
         hasAttachment,
     )
-    const recipients = [
-      ...new Set(
-        forwardTo
-          .split(/[,;\n]/)
-          .map((email) => email.trim().toLowerCase())
-          .filter(Boolean),
-      ),
-    ]
+    const recipients = [...new Set(parseAddresses(forwardTo))]
     if (!hasCriteria) {
       setError(t('filters.criteriaRequired'))
       return

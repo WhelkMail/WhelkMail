@@ -233,9 +233,10 @@ The first deployment URL is `https://whelkmail.pages.dev` (or the project name y
    - Use **Test connection** in Settings.
 6. For a send-only domain:
    - Select the relay provider and paste its API key.
-   - Choose Google Drive or R2 (R2 appears only if the `BUCKET` binding exists).
+   - Choose where sent copies and drafts go: **Google Drive**, **R2** (only if the `BUCKET` binding exists) or **another account's mailbox**. The third option appends every message to that IMAP account's Sent folder and every draft to its Drafts folder, and needs a connected IMAP account: without one the option stays disabled and saving drafts would fail (`sent_copy_target_not_connected`).
+   - Only one destination is active at a time; switching back to Drive/R2 clears the mailbox choice.
 7. Send a test message.
-8. Save a draft, reopen it from **Drafts**, and delete it.
+8. Save a draft, reopen it from **Drafts**, and delete it. With a mailbox destination, check that the draft also shows up in that account's Drafts folder on the provider.
 9. Add a second account to see address labels and the unified inbox.
 
 ### 1.8 Custom domain
@@ -326,7 +327,7 @@ For send-only accounts:
 2. Verify the sending domain with the provider (SPF and DKIM).
 3. Copy the provider API key.
 4. Paste it in the account creation form or in Settings.
-5. Optional: in Settings → Accounts, pick an IMAP account under **Also append the sent copy to**. Every message sent from the relay account is then also appended to that mailbox's Sent folder, on top of the Drive/R2 archive.
+5. Choose where the sent copies and drafts go: **Google Drive**, **R2** or **another account's mailbox**. The third option appends every message to the Sent folder (and every draft to the Drafts folder) of a connected IMAP account instead of storing them on Drive/R2; it is an alternative, not an addition.
 
 Supported providers: SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark.
 

@@ -1,8 +1,8 @@
 import { getAccountRow, type MessageRow } from '../db'
 import type { Env } from '../env'
-import { getStorage } from '../storage'
 import { deleteDraft } from './imap'
 import { parseImapMessageId, parseRelayMessageId } from './ids'
+import { removeStoredCopy } from './relay-target'
 
 export async function deleteDraftById(env: Env, id: string): Promise<void> {
   const imapId = parseImapMessageId(id)
@@ -31,8 +31,7 @@ export async function deleteDraftById(env: Env, id: string): Promise<void> {
   const account = await getAccountRow(env, row.account_id)
   if (account) {
     try {
-      const storage = await getStorage(env, account)
-      await storage.remove(row.storage_key)
+      await removeStoredCopy(env, account, row.storage_driver, row.storage_key)
     } catch {
       // best effort
     }

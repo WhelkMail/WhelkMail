@@ -14,7 +14,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import type { Account, Folder, Label, LabelColor } from '../../shared/types'
+import type { Account, Folder, Label, LabelColor, LabelInput } from '../../shared/types'
 import { useI18n } from '../i18n'
 import { LABEL_COLORS, cn, labelDot, labelStyle } from '../lib/utils'
 import { WhelkLogo } from './WhelkLogo'
@@ -30,6 +30,7 @@ interface SidebarProps {
   onFolder: (folder: Folder) => void
   onSelectLabel: (id: string | null) => void
   onCreateLabel: (name: string, color: LabelColor) => Promise<Label | null>
+  onUpdateLabel: (id: string, input: LabelInput) => Promise<Label | null>
   onDeleteLabel: (id: string) => void
   onSettings: () => void
   onContacts: () => void
@@ -48,6 +49,7 @@ export function Sidebar({
   onFolder,
   onSelectLabel,
   onCreateLabel,
+  onUpdateLabel,
   onDeleteLabel,
   onSettings,
   onContacts,
@@ -59,6 +61,10 @@ export function Sidebar({
   const [name, setName] = useState('')
   const [color, setColor] = useState<LabelColor>('blue')
   const [busy, setBusy] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editColor, setEditColor] = useState<LabelColor>('blue')
+  const [editBusy, setEditBusy] = useState(false)
 
   async function create(event: FormEvent) {
     event.preventDefault()
@@ -71,6 +77,36 @@ export function Sidebar({
     if (created) {
       setName('')
       setShowCreate(false)
+    }
+  }
+
+  function startEdit(label: Label) {
+    setEditingId(label.id)
+    setEditName(label.name)
+    setEditColor(label.color)
+    setShowCreate(false)
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setEditName('')
+  }
+
+  async function saveEdit(event: FormEvent, label: Label) {
+    event.preventDefault()
+    const nextName = editName.trim()
+    if (!nextName || editBusy) {
+      return
+    }
+    if (nextName === label.name && editColor === label.color) {
+      cancelEdit()
+      return
+    }
+    setEditBusy(true)
+    const updated = await onUpdateLabel(label.id, { name: nextName, color: editColor })
+    setEditBusy(false)
+    if (updated) {
+      cancelEdit()
     }
   }
 
@@ -274,11 +310,61 @@ export function Sidebar({
             ) : null}
             {labels.map((label) => {
               const active = selectedLabelId === label.id
+              if (editingId === label.id) {
+                return (
+                  <form
+                    key={label.id}
+                    onSubmit={(event) => void saveEdit(event, label)}
+                    className="mb-1 rounded-xl border border-line bg-white p-2"
+                  >
+                    <input
+                      value={editName}
+                      onChange={(event) => setEditName(event.target.value)}
+                      placeholder={t('labels.name')}
+                      maxLength={40}
+                      autoFocus
+                      className="w-full rounded-lg border border-line px-2 py-1.5 text-xs outline-none focus:border-brand"
+                    />
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {LABEL_COLORS.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setEditColor(item.id)}
+                          aria-label={item.id}
+                          className={cn(
+                            'h-4 w-4 rounded-full ring-offset-1',
+                            item.dot,
+                            editColor === item.id ? 'ring-2 ring-slate-700' : '',
+                          )}
+                        />
+                      ))}
+                    </div>
+                    <div className="mt-2 flex gap-1.5">
+                      <button
+                        type="submit"
+                        disabled={editBusy || !editName.trim()}
+                        className="flex-1 rounded-lg bg-slate-900 px-2 py-1.5 text-xs text-white hover:bg-slate-700 disabled:opacity-50"
+                      >
+                        {editBusy ? t('common.loading') : t('common.save')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={editBusy}
+                        onClick={cancelEdit}
+                        className="rounded-lg border border-line px-2 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                    </div>
+                  </form>
+                )
+              }
               return (
                 <div
                   key={label.id}
                   className={cn(
-                    'group flex items-center gap-2 rounded-full pr-2',
+                    'group flex items-center gap-1 rounded-full pr-2',
                     active ? labelStyle(label.color) : 'text-slate-700 hover:bg-slate-200/60',
                   )}
                 >
@@ -295,10 +381,19 @@ export function Sidebar({
                   </button>
                   <button
                     type="button"
+                    onClick={() => startEdit(label)}
+                    title={t('labels.edit', { name: label.name })}
+                    aria-label={t('labels.edit', { name: label.name })}
+                    className="shrink-0 rounded-full p-1 text-muted opacity-60 hover:bg-white/70 hover:text-slate-900 hover:opacity-100"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => onDeleteLabel(label.id)}
                     title={t('labels.delete')}
                     aria-label={t('labels.delete', { name: label.name })}
-                    className="shrink-0 rounded-full p-1 text-muted opacity-0 hover:bg-white/70 hover:text-brand-strong group-hover:opacity-100"
+                    className="shrink-0 rounded-full p-1 text-muted opacity-60 hover:bg-white/70 hover:text-brand-strong hover:opacity-100"
                   >
                     <X size={13} />
                   </button>

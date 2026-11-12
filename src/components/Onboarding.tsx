@@ -151,12 +151,16 @@ export function Onboarding({ accounts, storage, health, busy, error, onCancel, o
       setLocalError(t('onboarding.relayDomainRequired'))
       return
     }
+    if (relayStorage === 'imap' && !relaySentCopyAccountId) {
+      setLocalError(t('onboarding.sentCopyRequired'))
+      return
+    }
     await onCreate({
       kind: 'relay',
       email,
       displayName,
-      storageDriver: relayStorage === 'r2' ? 'r2' : 'drive',
-      sentCopyAccountId: relaySentCopyAccountId || undefined,
+      storageDriver: relayStorage === 'imap' ? 'imap' : relayStorage === 'r2' ? 'r2' : 'drive',
+      sentCopyAccountId: relayStorage === 'imap' ? relaySentCopyAccountId : undefined,
       relayProvider,
       relayApiKey: relayApiKey || undefined,
       relayApiSecret: relayApiSecret || undefined,
@@ -557,7 +561,7 @@ export function Onboarding({ accounts, storage, health, busy, error, onCancel, o
 
               <div>
                 <p className="mb-2 text-sm font-medium text-muted">{t('onboarding.storage')}</p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-3">
                   <button
                     type="button"
                     onClick={() => setRelayStorage('drive')}
@@ -590,33 +594,56 @@ export function Onboarding({ accounts, storage, health, busy, error, onCancel, o
                       </span>
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    disabled={relaySentCopyTargets.length === 0}
+                    onClick={() => setRelayStorage('imap')}
+                    className={cn(
+                      'flex items-start gap-3 rounded-xl border p-4 text-left transition',
+                      relayStorage === 'imap' ? 'border-brand bg-brand-soft' : 'border-line',
+                      relaySentCopyTargets.length === 0
+                        ? 'cursor-not-allowed opacity-50'
+                        : 'hover:border-slate-300',
+                    )}
+                  >
+                    <Server size={18} className="mt-0.5 text-brand" />
+                    <span>
+                      <span className="block text-sm font-medium">
+                        {t('settings.sentCopyMailbox')}
+                      </span>
+                      <span className="block text-xs text-muted">
+                        {relaySentCopyTargets.length > 0
+                          ? t('settings.sentCopyMailboxNote')
+                          : t('onboarding.sentCopyTargetEmpty')}
+                      </span>
+                    </span>
+                  </button>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-muted">
-                    {t('settings.sentCopyTarget')}
-                  </span>
-                  <select
-                    value={relaySentCopyAccountId}
-                    onChange={(event) => setRelaySentCopyAccountId(event.target.value)}
-                    className="w-full rounded-lg border border-line px-3 py-2 outline-none focus:border-brand"
-                  >
-                    <option value="">{t('settings.sentCopyTargetNone')}</option>
-                    {relaySentCopyTargets.map((target) => (
-                      <option key={target.id} value={target.id}>
-                        {target.displayName} — {target.email} · {target.sentFolder}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="mt-1 block text-xs text-muted">
-                    {relaySentCopyTargets.length > 0
-                      ? t('settings.sentCopyTargetHint')
-                      : t('onboarding.sentCopyTargetEmpty')}
-                  </span>
-                </label>
-              </div>
+              {relayStorage === 'imap' ? (
+                <div>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium text-muted">
+                      {t('settings.sentCopyTarget')}
+                    </span>
+                    <select
+                      value={relaySentCopyAccountId}
+                      onChange={(event) => setRelaySentCopyAccountId(event.target.value)}
+                      className="w-full rounded-lg border border-line px-3 py-2 outline-none focus:border-brand"
+                    >
+                      {relaySentCopyTargets.map((target) => (
+                        <option key={target.id} value={target.id}>
+                          {target.displayName} — {target.email} · {target.sentFolder}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="mt-1 block text-xs text-muted">
+                      {t('settings.sentCopyTargetHint')}
+                    </span>
+                  </label>
+                </div>
+              ) : null}
             </>
           )}
 

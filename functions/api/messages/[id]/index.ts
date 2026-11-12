@@ -1,10 +1,11 @@
-import type { MessageDetail } from '../../../../shared/types'
+import type { AttachmentMeta, Folder, Mailbox, MessageDetail } from '../../../../shared/types'
+import { getAccountRow, type MessageRow } from '../../../_lib/db'
 import type { Env } from '../../../_lib/env'
 import { fail, json } from '../../../_lib/http'
 import { isSchemaError } from '../../../_lib/schema'
 import { loadRaw } from '../../../_lib/mail/load'
 import { markMessageSeen } from '../../../_lib/mail/imap'
-import { parseImapMessageId } from '../../../_lib/mail/ids'
+import { parseImapMessageId, parseRelayMessageId } from '../../../_lib/mail/ids'
 import {
   attachmentMeta,
   bodyText,
@@ -77,11 +78,82 @@ function inlineCidImages(
   })
 }
 
+function parseJson<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) {
+    return fallback
+  }
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return fallback
+  }
+}
+
+/**
+ * Relay messages normally have a copy on Drive/R2 or in an IMAP mailbox. When
+ * that copy is missing (a send that failed before the copy was written) the D1
+ * row still holds the body, so the message opens instead of returning 404.
+ */
+async function relayDetail(env: Env, id: string): Promise<MessageDetail | null> {
+  const relayId = parseRelayMessageId(id)
+  if (!relayId) {
+    return null
+  }
+  const row = await env.DB.prepare('SELECT * FROM messages WHERE id = ?')
+    .bind(relayId)
+    .first<MessageRow>()
+  if (!row) {
+    return null
+  }
+  const account = await getAccountRow(env, row.account_id)
+  if (!account) {
+    return null
+  }
+  const attachments = parseJson<AttachmentMeta[]>(row.attachments_json, [])
+  let labelIds: string[] = []
+  try {
+    const labels = await env.DB.prepare('SELECT label_id FROM message_labels WHERE message_id = ?')
+      .bind(id)
+      .all<{ label_id: string }>()
+    labelIds = labels.results.map((item) => item.label_id)
+  } catch (error) {
+    if (!isSchemaError(error)) {
+      throw error
+    }
+  }
+  return {
+    id,
+    accountId: account.id,
+    accountEmail: account.email,
+    accountName: account.display_name,
+    folder: row.folder as Folder,
+    from: { name: row.from_name, email: row.from_email },
+    to: parseJson<Mailbox[]>(row.to_json, []),
+    cc: parseJson<Mailbox[]>(row.cc_json, []),
+    bcc: parseJson<Mailbox[]>(row.bcc_json, []),
+    subject: row.subject,
+    snippet: row.snippet,
+    date: row.sent_at,
+    unread: false,
+    hasAttachments: attachments.length > 0,
+    status: row.status === 'failed' ? 'failed' : row.status === 'draft' ? 'draft' : 'sent',
+    text: row.body_text,
+    html: row.body_html,
+    attachments,
+    size: row.size,
+    labelIds,
+  }
+}
+
 export const onRequestGet: PagesFunction<Env> = async (context) => {
   const id = context.params.id as string
   const startedAt = Date.now()
   const loaded = await loadRaw(context.env, id, true)
   if (!loaded) {
+    const fallback = await relayDetail(context.env, id)
+    if (fallback) {
+      return json({ message: fallback })
+    }
     return fail('Message not found', 404, undefined, 'message_not_found')
   }
   const loadDoneAt = Date.now()

@@ -45,11 +45,55 @@ export function initials(value: string): string {
   return cleaned.slice(0, 2).toUpperCase()
 }
 
+/**
+ * Split a recipient field into a list of bare email addresses.
+ *
+ * Picking a contact inserts `Name <addr>` (see `displayAddress`), so the field
+ * can mix plain addresses with `Name <addr>` entries, quotes and separators.
+ * Commas and semicolons inside a quoted name or inside angle brackets do not
+ * split, and the display name is dropped: the API only accepts addresses.
+ */
 export function parseAddresses(value: string): string[] {
-  return value
-    .split(/[,;]/)
-    .map((item) => item.trim().toLowerCase())
+  return splitAddressList(value)
+    .map((part) => bareAddress(part))
     .filter(Boolean)
+}
+
+function splitAddressList(value: string): string[] {
+  const parts: string[] = []
+  let current = ''
+  let inQuotes = false
+  let inBrackets = false
+  for (const char of value) {
+    if (char === '"') {
+      inQuotes = !inQuotes
+      current += char
+      continue
+    }
+    if (!inQuotes) {
+      if (char === '<') {
+        inBrackets = true
+      } else if (char === '>') {
+        inBrackets = false
+      } else if (!inBrackets && (char === ',' || char === ';')) {
+        parts.push(current)
+        current = ''
+        continue
+      }
+    }
+    current += char
+  }
+  parts.push(current)
+  return parts
+}
+
+function bareAddress(part: string): string {
+  const bracketed = part.match(/<([^<>]*)>/)
+  const address = (bracketed ? bracketed[1] : part).trim()
+  if (!address) {
+    return ''
+  }
+  return address.replace(/^["']+|["']+$/g, '').trim().toLowerCase()
 }
 
 export function isValidEmail(value: string): boolean {

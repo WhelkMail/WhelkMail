@@ -49,7 +49,7 @@ Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a fam
 - Multiple accounts in one view, each with its own IMAP/SMTP servers and credentials.
 - Password, app-password, Google OAuth2 and Microsoft OAuth2 (XOAUTH2) authentication.
 - Sending through each account's own SMTP server.
-- Send-only "relay" accounts (SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark or a custom SMTP server with manual host/port/credentials) for domains without SMTP, with sent/draft archive on Drive or R2, and the option to append every sent message to the Sent folder of an IMAP account you already read.
+- Send-only "relay" accounts (SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark or a custom SMTP server with manual host/port/credentials) for domains without SMTP. Sent copies and drafts go to Google Drive, Cloudflare R2, or the Sent/Drafts folders of an IMAP account you already read — pick one destination per account.
 - Optional archive and provider cleanup for IMAP: archive bodies and attachments, then move the original to the provider Trash.
 
 ### Organization
@@ -211,6 +211,7 @@ Relay credentials can also be entered per account in the UI and are encrypted at
 - Filters run when the inbox is loaded and when a sync ingests new inbox messages. Matching uses From/To/Subject/snippet, not the full message body.
 - Forwarding and provider deletion run from the cron worker, so they require the same setup as Web Push. They only act on new incoming messages detected after the initial sync.
 - No alias-based "send as" yet: the sender is the account address.
+- Send-only accounts that keep sent copies and drafts in an IMAP mailbox (`storage_driver = 'imap'`) have no Drive/R2 fallback: while that account is disconnected, saving a draft fails until you reconnect it or switch the relay account back to Drive/R2. The draft is appended as a real message, so it appears both in the relay account's Drafts (D1 row) and in the target account's Drafts folder.
 - Single shared `APP_PASSWORD` (with optional TOTP); this is a personal / small-team tool, not a multi-tenant service.
 - Login rate limiting is per IP and best-effort, not a substitute for Cloudflare Access or a WAF.
 - Account deletion removes D1 rows and makes a best-effort cleanup of R2/Drive objects referenced in D1; it never deletes mail from the provider.

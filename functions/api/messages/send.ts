@@ -12,6 +12,7 @@ import type { Env } from '../../_lib/env'
 import { fail, json, readJson } from '../../_lib/http'
 import { deleteDraftById } from '../../_lib/mail/drafts'
 import { appendToSent } from '../../_lib/mail/imap'
+import { resolveCopyTarget, storeCopyInMailbox } from '../../_lib/mail/relay-target'
 import { sendWithAccount } from '../../_lib/mail/smtp'
 import { queueSync } from '../../_lib/sync'
 import { buildMime, snippetOf } from '../../_lib/mime'
@@ -75,35 +76,11 @@ async function persistRelayMessage(input: PersistInput): Promise<MessageRow> {
 }
 
 /**
- * Send-only accounts keep their sent copies on Drive/R2. Optionally the same
- * message is appended to the Sent folder of an IMAP account, so the copy also
- * shows up in a real mailbox the user already reads.
+ * Send-only accounts keep sent copies on Drive/R2 by default. When the account
+ * is configured with `storage_driver = 'imap'` the same MIME is appended to the
+ * Sent folder of another (IMAP) account instead, and the D1 row keeps a pointer
+ * to that copy.
  */
-async function copySentToImapAccount(
-  env: Env,
-  account: AccountRow,
-  mime: Uint8Array,
-  waitUntil: (promise: Promise<unknown>) => void,
-): Promise<string | undefined> {
-  const targetId = account.sent_copy_account_id
-  if (!targetId) {
-    return undefined
-  }
-  const target = await getAccountRow(env, targetId)
-  if (!target || target.kind !== 'imap') {
-    return undefined
-  }
-  try {
-    await appendToSent(env, target, mime)
-  } catch (error) {
-    return `Messaggio inviato, ma la copia in ${target.sent_folder || 'Sent'} di ${target.email} non è stata salvata: ${
-      error instanceof Error ? error.message : 'errore IMAP'
-    }`
-  }
-  await queueSync(env, target, 'sent', waitUntil).catch(() => undefined)
-  return undefined
-}
-
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const body = await readJson<unknown>(context.request)
   const parsed = sendSchema.safeParse(body)
@@ -237,6 +214,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   if (account.storage_driver === 'r2' && !context.env.BUCKET) {
     return fail('R2 is not configured on this deployment', 400, undefined, 'r2_not_configured')
   }
+  const copiesToMailbox = account.storage_driver === 'imap'
+  const copyTarget = copiesToMailbox ? await resolveCopyTarget(context.env, account) : null
+  if (copiesToMailbox && !copyTarget) {
+    return fail(
+      'Choose a connected IMAP account that stores the sent copy',
+      400,
+      undefined,
+      'sent_copy_target_not_connected',
+    )
+  }
   let relay: RelayAdapter
   try {
     relay = await getRelay(context.env, account)
@@ -268,22 +255,24 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     messageId,
     date: now,
   })
-  const objectKey =
-    account.storage_driver === 'r2'
-      ? `accounts/${account.id}/sent/${id}.eml`
-      : `sent/${id}.eml`
-
-  let stored
-  try {
-    const storage = await getStorage(context.env, account)
-    stored = await storage.put(objectKey, mime, 'message/rfc822')
-  } catch (error) {
-    return fail(
-      'Saving the sent copy failed',
-      502,
-      error instanceof Error ? error.message : 'Storage unavailable',
-      'storage_failed',
-    )
+  let storageKey = ''
+  if (!copyTarget) {
+    const objectKey =
+      account.storage_driver === 'r2'
+        ? `accounts/${account.id}/sent/${id}.eml`
+        : `sent/${id}.eml`
+    try {
+      const storage = await getStorage(context.env, account)
+      const stored = await storage.put(objectKey, mime, 'message/rfc822')
+      storageKey = stored.key
+    } catch (error) {
+      return fail(
+        'Saving the sent copy failed',
+        502,
+        error instanceof Error ? error.message : 'Storage unavailable',
+        'storage_failed',
+      )
+    }
   }
 
   try {
@@ -298,6 +287,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       html: input.html,
       attachments,
     })
+    let warning: string | undefined
+    if (copyTarget) {
+      try {
+        storageKey = await storeCopyInMailbox(context.env, copyTarget, mime, 'sent')
+        await queueSync(context.env, copyTarget, 'sent', (promise) => context.waitUntil(promise)).catch(
+          () => undefined,
+        )
+      } catch (error) {
+        warning = `Messaggio inviato, ma la copia in ${copyTarget.sent_folder || 'Sent'} di ${
+          copyTarget.email
+        } non è stata salvata: ${error instanceof Error ? error.message : 'errore IMAP'}`
+      }
+    }
     const row = await persistRelayMessage({
       env: context.env,
       account,
@@ -312,16 +314,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       bodyHtml: input.html ?? null,
       sentAt: now.toISOString(),
       size: mime.byteLength,
-      storageKey: stored.key,
+      storageKey,
       attachments: attachmentMeta,
       status: 'sent',
     })
     if (input.draftId) {
       await deleteDraftById(context.env, input.draftId).catch(() => undefined)
     }
-    const warning = await copySentToImapAccount(context.env, account, mime, (promise) =>
-      context.waitUntil(promise),
-    )
     return json({ ok: true, message: relayMessageSummary(row, account), warning }, 201)
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'Invio fallito'
@@ -339,7 +338,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       bodyHtml: input.html ?? null,
       sentAt: now.toISOString(),
       size: mime.byteLength,
-      storageKey: stored.key,
+      storageKey,
       attachments: attachmentMeta,
       status: 'failed',
     })

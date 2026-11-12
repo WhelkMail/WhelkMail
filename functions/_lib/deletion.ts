@@ -3,6 +3,7 @@ import type { AccountRow } from './db'
 import type { Env } from './env'
 import { moveToTrash } from './mail/imap'
 import { parseImapMessageId } from './mail/ids'
+import { parseImapPointer } from './mail/relay-target'
 import { getStorage } from './storage'
 import { DriveStorage } from './storage/drive'
 import { R2Storage } from './storage/r2'
@@ -104,7 +105,9 @@ export async function purgeAccountStorage(env: Env, account: AccountRow): Promis
       .bind(account.id)
       .all<{ storage_key: string }>()
     for (const row of messages.results) {
-      if (row.storage_key) {
+      // Pointers refer to mail kept in an IMAP mailbox: account deletion must
+      // never remove messages from the provider.
+      if (row.storage_key && !parseImapPointer(row.storage_key)) {
         keys.add(row.storage_key)
       }
     }
@@ -136,7 +139,7 @@ export async function purgeAccountStorage(env: Env, account: AccountRow): Promis
             ? new R2Storage(env)
             : null
     } else {
-      storage = await getStorage(env, account)
+      storage = account.storage_driver === 'imap' ? null : await getStorage(env, account)
     }
   } catch {
     return

@@ -381,11 +381,12 @@ export async function appendToSent(
   env: Env,
   account: AccountRow,
   message: Uint8Array,
-): Promise<{ folder: string }> {
+): Promise<{ folder: string; uid: number }> {
   return withImap(env, account, async (connection) => {
     const folder = await resolveSentFolder(connection, account, env)
     const result = await appendWithCreate(connection, folder, message, '(\\Seen)', 'sent')
-    return { folder: result.folder }
+    const uid = await appendedUid(connection, result.folder, result.uid)
+    return { folder: result.folder, uid }
   })
 }
 
@@ -393,22 +394,59 @@ export async function saveDraft(
   env: Env,
   account: AccountRow,
   message: Uint8Array,
-): Promise<{ uid: number }> {
+): Promise<{ folder: string; uid: number }> {
   return withImap(env, account, async (connection) => {
     const folder = await resolveDraftsFolder(connection, account, env)
     const result = await appendWithCreate(connection, folder, message, '(\\Draft \\Seen)', 'draft')
-    if (result.uid) {
-      return { uid: result.uid }
-    }
-    const details = await connection.selectWithDetails(result.folder)
-    if (details.uidNext && details.uidNext > 1) {
-      return { uid: details.uidNext - 1 }
-    }
-    const uids = await connection.searchAll()
-    if (uids.length === 0) {
-      throw new Error('Bozza non trovata dopo APPEND')
-    }
-    return { uid: Math.max(...uids) }
+    const uid = await appendedUid(connection, result.folder, result.uid)
+    return { folder: result.folder, uid }
+  })
+}
+
+/**
+ * Servers without UIDPLUS do not return an APPENDUID: fall back to the folder
+ * details or a search so the caller always gets the UID of the new message.
+ */
+async function appendedUid(
+  connection: ImapConnection,
+  folder: string,
+  uid: number | null,
+): Promise<number> {
+  if (uid) {
+    return uid
+  }
+  const details = await connection.selectWithDetails(folder)
+  if (details.uidNext && details.uidNext > 1) {
+    return details.uidNext - 1
+  }
+  const uids = await connection.searchAll()
+  if (uids.length === 0) {
+    throw new Error('Messaggio non trovato dopo APPEND')
+  }
+  return Math.max(...uids)
+}
+
+export async function fetchMessageAt(
+  env: Env,
+  account: AccountRow,
+  folder: string,
+  uid: number,
+): Promise<Uint8Array> {
+  return withImap(env, account, async (connection) => {
+    await connection.select(folder)
+    return connection.fetchFull(uid, false)
+  })
+}
+
+export async function deleteMessageAt(
+  env: Env,
+  account: AccountRow,
+  folder: string,
+  uid: number,
+): Promise<void> {
+  await withImap(env, account, async (connection) => {
+    await connection.select(folder)
+    await connection.deleteMessage(uid)
   })
 }
 

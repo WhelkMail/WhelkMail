@@ -8,6 +8,9 @@ export async function getStorage(env: Env, row: AccountRow): Promise<StorageAdap
   if (row.storage_driver === 'r2') {
     return new R2Storage(env)
   }
+  if (row.storage_driver === 'imap') {
+    throw new Error('This account keeps sent copies in an IMAP mailbox, not in object storage')
+  }
   return new DriveStorage(env, row)
 }
 

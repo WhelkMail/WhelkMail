@@ -4,6 +4,7 @@ import { getAccountRow, type AccountRow, type MessageRow } from '../db'
 import type { Env } from '../env'
 import { isSchemaError } from '../schema'
 import { getImapArchiveStorage, getStorage } from '../storage'
+import { loadCopyBytes, parseImapPointer } from './relay-target'
 import { fetchMessage } from './imap'
 import { parseImapMessageId, parseRelayMessageId } from './ids'
 
@@ -105,6 +106,17 @@ export async function loadRaw(
   }
   const account = await getAccountRow(env, row.account_id)
   if (!account) {
+    return null
+  }
+  const pointer = parseImapPointer(row.storage_key)
+  if (pointer) {
+    const bytes = await loadCopyBytes(env, pointer)
+    if (!bytes) {
+      return null
+    }
+    return { bytes, account, folder: row.folder as Folder, source: 'storage', needsSeen: false }
+  }
+  if (account.storage_driver === 'imap') {
     return null
   }
   const storage = await getStorage(env, account)

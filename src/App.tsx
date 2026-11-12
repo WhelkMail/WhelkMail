@@ -12,6 +12,7 @@ import type {
   Folder,
   HealthStatus,
   Label,
+  LabelInput,
   LabelColor,
   MailFilter,
   MessageDetail,
@@ -928,6 +929,17 @@ export default function App() {
     }
   }
 
+  async function updateLabel(id: string, input: LabelInput): Promise<Label | null> {
+    try {
+      const response = await api.updateLabel(id, input)
+      setLabels((current) => current.map((item) => (item.id === id ? response.label : item)))
+      return response.label
+    } catch (error) {
+      setNotice(errorText(error, tRef.current))
+      return null
+    }
+  }
+
   async function deleteLabel(id: string) {
     const label = labels.find((item) => item.id === id)
     if (!label || !window.confirm(t('labels.deleteConfirm', { name: label.name }))) {
@@ -1244,6 +1256,7 @@ export default function App() {
         onFolder={openFolder}
         onSelectLabel={selectLabel}
         onCreateLabel={createLabel}
+        onUpdateLabel={updateLabel}
         onDeleteLabel={(id) => void deleteLabel(id)}
         onSettings={() => setView('settings')}
         onContacts={() => setView('contacts')}

@@ -5,7 +5,7 @@ import type { Env } from '../../_lib/env'
 import { fail, json, readJson } from '../../_lib/http'
 import { moveMessages } from '../../_lib/mail/imap'
 import { parseImapMessageId, parseRelayMessageId } from '../../_lib/mail/ids'
-import { getStorage } from '../../_lib/storage'
+import { removeStoredCopy } from '../../_lib/mail/relay-target'
 import { isSchemaError, schemaOutdated } from '../../_lib/schema'
 import { queueSync } from '../../_lib/sync'
 
@@ -52,10 +52,10 @@ async function deleteRelayMessages(
       continue
     }
     const row = await env.DB.prepare(
-      'SELECT account_id, storage_key FROM messages WHERE id = ?',
+      'SELECT account_id, storage_driver, storage_key FROM messages WHERE id = ?',
     )
       .bind(rawId)
-      .first<{ account_id: string; storage_key: string }>()
+      .first<{ account_id: string; storage_driver: string; storage_key: string }>()
     if (!row) {
       errors.push({ ids: [id], message: 'Messaggio non trovato' })
       continue
@@ -63,10 +63,9 @@ async function deleteRelayMessages(
     const account = await getAccountRow(env, row.account_id)
     if (account) {
       try {
-        const storage = await getStorage(env, account)
-        await storage.remove(row.storage_key)
+        await removeStoredCopy(env, account, row.storage_driver, row.storage_key)
       } catch {
-        // The D1 row is still removed if object storage cleanup fails.
+        // The D1 row is still removed if the copy cleanup fails.
       }
     }
     await env.DB.batch([

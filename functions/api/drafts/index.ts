@@ -9,6 +9,7 @@ import { saveDraft } from '../../_lib/mail/imap'
 import { imapMessageId, parseRelayMessageId } from '../../_lib/mail/ids'
 import { buildMime, snippetOf } from '../../_lib/mime'
 import { getStorage } from '../../_lib/storage'
+import { removeStoredCopy, resolveCopyTarget, storeCopyInMailbox } from '../../_lib/mail/relay-target'
 import { queueSync } from '../../_lib/sync'
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
@@ -113,21 +114,45 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
   const existingId = input.draftId ? parseRelayMessageId(input.draftId) : null
   const relayId = existingId ?? id
-  const storageKey =
-    account.storage_driver === 'r2'
-      ? `accounts/${account.id}/drafts/${relayId}.eml`
-      : `drafts/${relayId}.eml`
-
-  try {
-    const storage = await getStorage(context.env, account)
-    await storage.put(storageKey, mime, 'message/rfc822')
-  } catch (error) {
+  const copiesToMailbox = account.storage_driver === 'imap'
+  const copyTarget = copiesToMailbox ? await resolveCopyTarget(context.env, account) : null
+  if (copiesToMailbox && !copyTarget) {
     return fail(
-      'Saving the draft failed',
-      502,
-      error instanceof Error ? error.message : 'Storage unavailable',
-      'draft_save_failed',
+      'Choose a connected IMAP account that stores the draft',
+      400,
+      undefined,
+      'sent_copy_target_not_connected',
     )
+  }
+  let storageKey = ''
+  if (copyTarget) {
+    try {
+      storageKey = await storeCopyInMailbox(context.env, copyTarget, mime, 'draft')
+    } catch (error) {
+      return fail(
+        'Saving the draft failed',
+        502,
+        error instanceof Error ? error.message : 'IMAP error',
+        'draft_save_failed',
+      )
+    }
+  } else {
+    const objectKey =
+      account.storage_driver === 'r2'
+        ? `accounts/${account.id}/drafts/${relayId}.eml`
+        : `drafts/${relayId}.eml`
+    try {
+      const storage = await getStorage(context.env, account)
+      const stored = await storage.put(objectKey, mime, 'message/rfc822')
+      storageKey = stored.key
+    } catch (error) {
+      return fail(
+        'Saving the draft failed',
+        502,
+        error instanceof Error ? error.message : 'Storage unavailable',
+        'draft_save_failed',
+      )
+    }
   }
 
   const nowIso = now.toISOString()
@@ -138,13 +163,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     : null
 
   if (existing) {
-    if (existing.storage_key !== storageKey) {
-      try {
-        const storage = await getStorage(context.env, account)
-        await storage.remove(existing.storage_key)
-      } catch {
-        // best effort
-      }
+    if (existing.storage_key && existing.storage_key !== storageKey) {
+      await removeStoredCopy(context.env, account, existing.storage_driver, existing.storage_key).catch(
+        () => undefined,
+      )
     }
     await context.env.DB.prepare(
       'UPDATE messages SET to_json = ?, cc_json = ?, bcc_json = ?, subject = ?, snippet = ?, body_text = ?, body_html = ?, sent_at = ?, size = ?, storage_driver = ?, storage_key = ?, attachments_json = ?, status = ?, folder = ? WHERE id = ?',

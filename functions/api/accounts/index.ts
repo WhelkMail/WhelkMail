@@ -98,7 +98,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return fail('R2 is not configured on this deployment', 400, undefined, 'r2_not_configured')
     }
     let sentCopyAccountId: string | null = null
-    if (input.sentCopyAccountId) {
+    if (input.storageDriver === 'imap') {
+      if (!input.sentCopyAccountId) {
+        return fail(
+          'Choose the IMAP account that stores the sent copy',
+          400,
+          undefined,
+          'sent_copy_target_required',
+        )
+      }
       const sentCopyTarget = await getAccountRow(context.env, input.sentCopyAccountId)
       if (!sentCopyTarget || sentCopyTarget.kind !== 'imap') {
         return fail(

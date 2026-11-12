@@ -1,5 +1,10 @@
 export type AccountKind = 'imap' | 'relay'
-export type StorageDriver = 'provider' | 'drive' | 'r2'
+/**
+ * `provider` keeps mail on the mail server. Relay accounts choose `drive` or
+ * `r2` for their sent copies/drafts, or `imap` to append them to the mailbox of
+ * another (IMAP) account instead of an object archive.
+ */
+export type StorageDriver = 'provider' | 'drive' | 'r2' | 'imap'
 export type AuthType = 'password' | 'oauth2'
 export type MailSecurity = 'tls' | 'starttls'
 export type ImapArchiveDriver = 'r2' | 'drive'

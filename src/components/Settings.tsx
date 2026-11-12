@@ -552,6 +552,29 @@ function AccountCard({
               >
                 <HardDrive size={14} /> {t('settings.r2')}
               </button>
+              <button
+                type="button"
+                disabled={
+                  busy || (!account.sentCopyAccountId && sentCopyTargets.length === 0)
+                }
+                onClick={() => {
+                  const target = account.sentCopyAccountId ?? sentCopyTargets[0]?.id
+                  if (target) {
+                    void onUpdate(account.id, { storageDriver: 'imap', sentCopyAccountId: target })
+                  }
+                }}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border px-3 py-2 text-xs',
+                  account.storageDriver === 'imap'
+                    ? 'border-brand bg-brand-soft text-brand-strong'
+                    : 'border-line hover:border-slate-300',
+                  !account.sentCopyAccountId &&
+                    sentCopyTargets.length === 0 &&
+                    'cursor-not-allowed opacity-50',
+                )}
+              >
+                <Server size={14} /> {t('settings.sentCopyMailbox')}
+              </button>
             </div>
           </div>
 
@@ -561,11 +584,16 @@ function AccountCard({
                 {t('settings.sentCopyTarget')}
               </span>
               <select
-                value={account.sentCopyAccountId ?? ''}
+                value={account.storageDriver === 'imap' ? account.sentCopyAccountId ?? '' : ''}
                 disabled={busy}
-                onChange={(event) =>
-                  void onUpdate(account.id, { sentCopyAccountId: event.target.value || null })
-                }
+                onChange={(event) => {
+                  const value = event.target.value
+                  if (value) {
+                    void onUpdate(account.id, { storageDriver: 'imap', sentCopyAccountId: value })
+                  } else if (account.storageDriver === 'imap') {
+                    void onUpdate(account.id, { storageDriver: 'drive' })
+                  }
+                }}
                 className="w-full rounded-lg border border-line bg-white px-2 py-1.5 text-xs outline-none disabled:opacity-50"
               >
                 <option value="">{t('settings.sentCopyTargetNone')}</option>
@@ -577,7 +605,9 @@ function AccountCard({
               </select>
             </label>
             <span className="mt-1 block text-[11px] text-muted">
-              {t('settings.sentCopyTargetHint')}
+              {sentCopyTargets.length > 0
+                ? t('settings.sentCopyTargetHint')
+                : t('settings.sentCopyTargetEmpty')}
             </span>
           </div>
 
