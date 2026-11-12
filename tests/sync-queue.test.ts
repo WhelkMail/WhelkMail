@@ -64,6 +64,22 @@ describe('pickSyncRequests', () => {
     ).toEqual(['a'])
   })
 
+  it('treats the folder as part of the key', () => {
+    // Inbox was just asked, Sent was not: the cooldown must not block Sent.
+    expect(
+      pickSyncRequests({
+        ...base,
+        stale: ['a:inbox', 'a:sent'],
+        active: [],
+        lastRequested: { 'a:inbox': base.now - 1000 },
+      }),
+    ).toEqual(['a:sent'])
+    // A locked folder is skipped even when its sibling is free.
+    expect(
+      pickSyncRequests({ ...base, stale: ['a:inbox', 'a:sent'], active: ['a:inbox'] }),
+    ).toEqual(['a:sent'])
+  })
+
   it('handles an empty or missing list', () => {
     expect(pickSyncRequests({ ...base, stale: [], active: [] })).toEqual([])
     expect(pickSyncRequests({ ...base, stale: [], active: ['a'] })).toEqual([])

@@ -8,11 +8,15 @@
  * turns `slice(0, 3)` into a rotating queue instead of always the same three.
  */
 export interface SyncQueueInput {
-  /** Accounts whose mirror is stale, in the order the server returned them. */
+  /**
+   * Stale folders as `accountId:folder`, in the order the server returned them.
+   * The folder is part of the key: switching from Inbox to Sent must not hit the
+   * cooldown recorded for another folder of the same account.
+   */
   stale: string[]
-  /** Stale accounts that already hold a sync lock. */
+  /** Stale folders that already hold a sync lock. */
   active: string[]
-  /** `accountId` → timestamp of the last request sent by this client. */
+  /** `accountId:folder` → timestamp of the last request sent by this client. */
   lastRequested: Record<string, number>
   now: number
   /** How many requests to emit at most. */

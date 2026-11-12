@@ -837,13 +837,19 @@ export async function runSyncChunk(
   env: Env,
   account: AccountRow,
   folder: Folder,
-): Promise<{ folders: MailboxSyncState[]; hasMore: boolean }> {
+): Promise<{ folders: MailboxSyncState[]; hasMore: boolean; locked?: boolean }> {
   const lock = await acquireSyncLock(env, account.id, folder)
   if (!lock) {
     console.log(`[sync] ${account.id}/${folder} skipped (lock held by another worker)`)
     const folders = await getSyncStates(env, account.id)
     const current = folders.find((item) => item.folder === folder)
-    return { folders, hasMore: current ? current.status === 'partial' : false }
+    // `locked` tells the caller "not mine, do not keep asking": the owner will
+    // finish the chunk and the next list load resumes the chain.
+    return {
+      folders,
+      hasMore: current ? current.status === 'partial' : false,
+      locked: true,
+    }
   }
   try {
     return await runSyncChunkLocked(env, account, folder, lock)

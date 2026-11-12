@@ -24,6 +24,7 @@ import type {
 } from '../shared/types'
 import { useI18n } from './i18n'
 import { api, ApiError, type AccountError } from './lib/api'
+import { runSyncChain } from './lib/sync-chain'
 import { pickSyncRequests } from './lib/sync-queue'
 import { errorText } from './lib/errors'
 import { syncSignature } from './lib/sync-signature'
@@ -366,15 +367,13 @@ export default function App() {
         console.log(
           `[list] folder=${folder} account=${selectedAccountId} threads=${response.threads.length} syncing=${Boolean(response.syncing)} ms=${Math.round(performance.now() - requestStartedAt)}`,
         )
-        setPendingSync({
-          stale: response.staleAccounts ?? [],
-          active: response.activeAccounts ?? [],
-        })
         return {
           messages: response.threads.map(threadSummary),
           nextCursor: response.nextCursor,
           errors: response.errors,
           syncing: Boolean(response.syncing),
+          stale: response.staleAccounts ?? [],
+          active: response.activeAccounts ?? [],
         }
       })
     request
@@ -385,6 +384,9 @@ export default function App() {
         setMessages(response.messages)
         setNextCursor(response.nextCursor ?? null)
         setListErrors(response.errors)
+        // Only a fresh answer for the folder on screen may schedule syncs: an
+        // older response arriving late would use the wrong folder.
+        setPendingSync({ stale: response.stale, active: response.active })
         setSyncingMessages(Boolean(response.syncing))
         setSelectedIds((current) =>
           current.filter((id) => response.messages.some((item) => item.id === id)),
@@ -434,8 +436,8 @@ export default function App() {
       return
     }
     const requests = pickSyncRequests({
-      stale: pendingSync.stale,
-      active: pendingSync.active,
+      stale: pendingSync.stale.map((id) => `${id}:${folder}`),
+      active: pendingSync.active.map((id) => `${id}:${folder}`),
       lastRequested: syncRequestsRef.current,
       now: Date.now(),
       limit: 3,
@@ -444,12 +446,16 @@ export default function App() {
     if (requests.length === 0) {
       return
     }
-    for (const accountId of requests) {
-      syncRequestsRef.current[accountId] = Date.now()
-      void api.runSync(accountId, folder).catch(() => undefined)
+    for (const key of requests) {
+      syncRequestsRef.current[key] = Date.now()
+      const accountId = key.slice(0, key.lastIndexOf(':'))
+      // The chain follows hasMore by itself: it does not depend on the list being
+      // reloaded or on the stale TTL to fetch the next chunk.
+      void runSyncChain(() => api.runSync(accountId, folder), { max: 30, delayMs: 250 }).catch(
+        () => undefined,
+      )
     }
-    // The poll refreshes the list when the chunk finishes, which brings a new
-    // staleAccounts list and continues the chain.
+    // The poll refreshes the list while chunks land and once they are done.
     setSyncingMessages(true)
   }, [pendingSync, listLoaded, view, folder])
 
