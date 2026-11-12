@@ -81,6 +81,11 @@ Key constraints:
    - `drive` / `r2`: the object is written before the send, so a failed send still has its copy.
    - `imap`: nothing is written to object storage; the same MIME is appended to the Sent folder of the account in `sent_copy_account_id` after the relay accepts the message, `storage_key` keeps a pointer (`imap:<account>:<folder>:<uid>`) and a Sent sync is queued for that account. If the append fails the message is still sent and recorded: when the deployment has any object storage (Drive connected or the `BUCKET` binding) the MIME is written there as a rescue copy and `messages.storage_driver` records that driver, so attachments and the raw view keep working; without object storage only the D1 body remains and the response carries a warning.
 
+### Reply
+
+1. The reply composer takes its sender from `pickReplySender`: the receiving account's `reply_account_id` first, then the global "reply sender" preference (`auto` by default), then the account that received the message.
+2. Everything else is the normal send flow, so the reply leaves through the chosen account's own SMTP/relay and its copy follows that account's destination. Addresses of both accounts are excluded from To/Cc to avoid replying to yourself.
+
 ### Drafts
 
 - **IMAP:** `APPEND` to the `\Drafts` folder with `\Draft \Seen`; delete with `UID STORE +FLAGS (\Deleted)` + `EXPUNGE`.
@@ -144,6 +149,7 @@ Important fields:
 - `oauth_provider`: currently `microsoft`
 - `sent_folder`, `drafts_folder`, `spam_folder`, `auto_saves_sent`
 - `sent_copy_account_id`: IMAP account that stores sent copies and drafts when `storage_driver` is `imap` (relay accounts only)
+- `reply_account_id`: account that sends the replies to messages received here. Used when a domain only forwards to this mailbox and sends through a relay account; cleared when that account is deleted
 - `signature`: optional per-account signature, used only when `signature_mode` is `per_account`
 - `incoming_label_id`: optional shared label applied automatically to every incoming message of this account
 - `delete_after_archive`: opt-in provider cleanup; archived incoming messages are moved to the provider Trash

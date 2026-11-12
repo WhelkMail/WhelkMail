@@ -123,6 +123,36 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
       )
     }
   }
+  const replyAccountId =
+    input.replyAccountId === undefined ? row.reply_account_id : input.replyAccountId
+  if (replyAccountId) {
+    if (replyAccountId === row.id) {
+      return fail(
+        'An account cannot reply as itself through another account',
+        400,
+        undefined,
+        'reply_account_invalid',
+      )
+    }
+    const replyAccount = await getAccountRow(context.env, replyAccountId)
+    if (!replyAccount) {
+      return fail('Reply account not found', 404, undefined, 'reply_account_not_found')
+    }
+    // The reply leaves through that account's own sender, so it has to be able
+    // to send: a relay with credentials or a connected IMAP mailbox.
+    const canSend =
+      replyAccount.kind === 'relay'
+        ? Boolean(replyAccount.relay_api_key_enc || replyAccount.smtp_host || context.env.RELAY_API_KEY)
+        : Boolean(replyAccount.secret_enc)
+    if (!canSend) {
+      return fail(
+        'The reply account is not configured to send',
+        400,
+        undefined,
+        'reply_account_not_ready',
+      )
+    }
+  }
   const username = input.username ?? row.username
   const imapHost = input.imapHost ?? row.imap_host
   const imapPort = input.imapPort ?? row.imap_port
@@ -166,7 +196,7 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
   }
 
   await context.env.DB.prepare(
-    'UPDATE accounts SET display_name = ?, signature = ?, incoming_label_id = ?, archive_imap_bodies = ?, imap_archive_driver = ?, delete_after_archive = ?, auto_sync = ?, sent_folder = ?, auto_saves_sent = ?, sent_copy_account_id = ?, storage_driver = ?, username = ?, secret_enc = ?, relay_provider = ?, relay_api_key_enc = ?, relay_api_secret_enc = ?, relay_domain = ?, relay_region = ?, imap_host = ?, imap_port = ?, imap_security = ?, smtp_host = ?, smtp_port = ?, smtp_security = ? WHERE id = ?',
+    'UPDATE accounts SET display_name = ?, signature = ?, incoming_label_id = ?, archive_imap_bodies = ?, imap_archive_driver = ?, delete_after_archive = ?, auto_sync = ?, sent_folder = ?, auto_saves_sent = ?, sent_copy_account_id = ?, reply_account_id = ?, storage_driver = ?, username = ?, secret_enc = ?, relay_provider = ?, relay_api_key_enc = ?, relay_api_secret_enc = ?, relay_domain = ?, relay_region = ?, imap_host = ?, imap_port = ?, imap_security = ?, smtp_host = ?, smtp_port = ?, smtp_security = ? WHERE id = ?',
   )
     .bind(
       displayName,
@@ -179,6 +209,7 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
       sentFolder,
       autoSavesSent,
       sentCopyAccountId,
+      replyAccountId,
       storageDriver,
       username,
       secretEncrypted,
@@ -248,6 +279,7 @@ export const onRequestDelete: PagesFunction<Env> = async (context) => {
     context.env.DB.prepare('DELETE FROM push_prefs WHERE account_id = ?').bind(id),
     context.env.DB.prepare('DELETE FROM messages WHERE account_id = ?').bind(id),
     context.env.DB.prepare('UPDATE accounts SET sent_copy_account_id = NULL WHERE sent_copy_account_id = ?').bind(id),
+    context.env.DB.prepare('UPDATE accounts SET reply_account_id = NULL WHERE reply_account_id = ?').bind(id),
     context.env.DB.prepare('DELETE FROM accounts WHERE id = ?').bind(id),
   ])
   return json({ ok: true })

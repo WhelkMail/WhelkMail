@@ -177,6 +177,8 @@ export interface Account {
   autoSavesSent: boolean
   /** IMAP account that receives a copy of the sent mail (relay accounts only). */
   sentCopyAccountId: string | null
+  /** Account used as the sender when replying to messages received here. */
+  replyAccountId: string | null
   maxAttachmentBytes: number
   storageDriver: StorageDriver
   relayProvider: string | null
@@ -340,6 +342,7 @@ export interface AccountPatch {
   sentFolder?: string
   autoSavesSent?: boolean
   sentCopyAccountId?: string | null
+  replyAccountId?: string | null
   storageDriver?: StorageDriver
   password?: string
   username?: string

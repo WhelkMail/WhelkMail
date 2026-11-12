@@ -26,6 +26,7 @@ import { api, ApiError, type AccountError } from './lib/api'
 import { errorText } from './lib/errors'
 import { syncSignature } from './lib/sync-signature'
 import { mergePage } from '../shared/paging'
+import { pickReplySender } from './lib/sender'
 import { displayAddress } from './lib/utils'
 import { Compose } from './components/Compose'
 import { Contacts } from './components/Contacts'
@@ -711,11 +712,13 @@ export default function App() {
   }, [])
 
   function replyTo(message: MessageDetail, all: boolean) {
-    const sendingAccountId =
-      defaultSenderReply !== 'auto' &&
-      accounts.some((account) => account.id === defaultSenderReply)
-        ? defaultSenderReply
-        : message.accountId
+    const receivingAccount = accounts.find((item) => item.id === message.accountId)
+    const sendingAccountId = pickReplySender({
+      messageAccountId: message.accountId,
+      replyAccountId: receivingAccount?.replyAccountId ?? null,
+      defaultSender: defaultSenderReply,
+      accountIds: accounts.map((item) => item.id),
+    })
     const sendingAccount = accounts.find((account) => account.id === sendingAccountId)
     const ownAddresses = new Set(
       [message.accountEmail, sendingAccount?.email ?? '']

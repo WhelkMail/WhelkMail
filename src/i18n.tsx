@@ -201,6 +201,10 @@ const en: Record<string, string> = {
   'settings.smtp': 'SMTP',
   'settings.user': 'User: {value}',
   'settings.maxAttachments': 'Max attachments: {value}',
+  'settings.replyAs': 'Reply as',
+  'settings.replyAsNone': 'This account (default)',
+  'settings.replyAsHint':
+    'Replies to messages received here leave from the account you pick. Use it when your domain forwards to this mailbox and only sends through a relay account.',
   'settings.sentFolder': 'Sent folder',
   'settings.autoSaveSent': 'Provider already saves sent mail (no APPEND)',
   'settings.sentCopy': 'Sent copy',
@@ -772,6 +776,10 @@ const it: Record<string, string> = {
   'settings.smtp': 'SMTP',
   'settings.user': 'Utente: {value}',
   'settings.maxAttachments': 'Allegati max: {value}',
+  'settings.replyAs': 'Rispondi come',
+  'settings.replyAsNone': 'Questo account (predefinito)',
+  'settings.replyAsHint':
+    'Le risposte ai messaggi ricevuti qui partono dall’account che scegli. Utile quando il dominio inoltra su questa casella e invia solo tramite un account relay.',
   'settings.sentFolder': 'Cartella inviate',
   'settings.autoSaveSent': 'Il provider salva già le inviate (nessun APPEND)',
   'settings.sentCopy': 'Copia inviata',

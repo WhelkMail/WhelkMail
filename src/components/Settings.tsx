@@ -227,6 +227,30 @@ function AccountCard({
       </label>
 
       {isImap ? (
+        <label className="mt-3 block rounded-xl bg-slate-50 p-3 text-xs">
+          <span className="mb-1 block font-medium text-slate-700">{t('settings.replyAs')}</span>
+          <select
+            value={account.replyAccountId ?? ''}
+            disabled={busy}
+            onChange={(event) =>
+              void onUpdate(account.id, { replyAccountId: event.target.value || null })
+            }
+            className="w-full rounded-lg border border-line bg-white px-2 py-1.5 text-xs outline-none disabled:opacity-50"
+          >
+            <option value="">{t('settings.replyAsNone')}</option>
+            {accounts
+              .filter((item) => item.id !== account.id)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.displayName} — {item.email}
+                </option>
+              ))}
+          </select>
+          <span className="mt-1 block text-[11px] text-muted">{t('settings.replyAsHint')}</span>
+        </label>
+      ) : null}
+
+      {isImap ? (
         <SyncPanel account={account} onSynced={onSyncComplete} onUpdate={onUpdate} />
       ) : null}
 

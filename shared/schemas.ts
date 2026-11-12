@@ -76,6 +76,7 @@ export const accountUpdateSchema = z.object({
   sentFolder: safeText(255).optional(),
   autoSavesSent: z.boolean().optional(),
   sentCopyAccountId: z.string().min(1).max(64).nullable().optional(),
+  replyAccountId: z.string().min(1).max(64).nullable().optional(),
   storageDriver: z.enum(['provider', 'drive', 'r2', 'imap']).optional(),
   password: z.string().min(1).max(500).refine(noControl, 'Invalid characters').optional(),
   username: safeText(255).optional(),
