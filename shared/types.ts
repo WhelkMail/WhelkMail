@@ -123,6 +123,14 @@ export interface FilterInput {
 
 export type SignatureMode = 'shared' | 'per_account'
 
+export interface RetentionSummary {
+  days: number
+  lastRunAt: string | null
+  lastDeleted: number
+  deletedTotal: number
+  cutoff: string | null
+}
+
 export interface AppSettings {
   defaultSignature: string
   signatureMode: SignatureMode

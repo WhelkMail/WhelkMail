@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   clampPageSize,
+  compareByDateDesc,
   decodePageCursor,
   encodePageCursor,
   mergePage,
@@ -80,5 +81,46 @@ describe('mergePage', () => {
   it('keeps the current list when the page is empty', () => {
     const current = [message('a', '2026-11-09')]
     expect(mergePage(current, [])).toBe(current)
+  })
+})
+
+describe('compareByDateDesc', () => {
+  it('orders ties by descending id, like ORDER BY sent_at DESC, id DESC', () => {
+    const items = [
+      message('a', '2026-11-09T10:00:00.000Z'),
+      message('c', '2026-11-09T10:00:00.000Z'),
+      message('b', '2026-11-09T10:00:00.000Z'),
+    ]
+    expect(items.sort(compareByDateDesc).map((item) => item.id)).toEqual(['c', 'b', 'a'])
+  })
+
+  it('keeps dates descending across different timestamps', () => {
+    const items = [
+      message('b', '2026-11-08T10:00:00.000Z'),
+      message('z', '2026-11-09T10:00:00.000Z'),
+      message('a', '2026-11-07T10:00:00.000Z'),
+    ]
+    expect(items.sort(compareByDateDesc).map((item) => item.id)).toEqual(['z', 'b', 'a'])
+  })
+
+  it('walks messages sharing a timestamp without skipping any', () => {
+    // A page boundary inside one timestamp is where an ascending tie-break used
+    // to serve the same rows twice and, after client-side dedupe, lose the rest.
+    const date = '2026-11-09T10:00:00.000Z'
+    const all = ['a', 'b', 'c', 'd', 'e'].map((id) => message(id, date))
+    const sorted = [...all].sort(compareByDateDesc)
+
+    const first = pageOf(sorted, 2)
+    expect(first.items.map((item) => item.id)).toEqual(['e', 'd'])
+
+    const cursor = decodePageCursor(first.nextCursor)
+    expect(cursor).toEqual({ date, id: 'd' })
+
+    // Same predicate as the SQL page clause:
+    // sent_at < ? OR (sent_at = ? AND id < ?)
+    const rest = all
+      .filter((item) => item.date < cursor.date || (item.date === cursor.date && item.id < cursor.id))
+      .sort(compareByDateDesc)
+    expect(rest.map((item) => item.id)).toEqual(['c', 'b', 'a'])
   })
 })

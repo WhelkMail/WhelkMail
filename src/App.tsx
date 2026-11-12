@@ -1159,6 +1159,13 @@ export default function App() {
 
   async function changeMetadataRetention(value: number) {
     const previous = metadataRetentionDays
+    if (
+      value > 0 &&
+      (previous === 0 || value < previous) &&
+      !window.confirm(t('settings.retentionConfirm'))
+    ) {
+      return
+    }
     setMetadataRetentionDays(value)
     try {
       await api.updateSettings({ metadataRetentionDays: value })

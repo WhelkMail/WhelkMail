@@ -9,10 +9,12 @@ import {
 import { toContact, type ContactRow } from '../../_lib/contacts'
 import type { Env } from '../../_lib/env'
 import { fail, json } from '../../_lib/http'
+import { relayDraftMirrorIds } from '../../_lib/mail/relay-target'
 import { isSchemaError } from '../../_lib/schema'
 import { imapMessageSummary, type ImapMessageRow } from '../../_lib/sync'
 import {
   clampPageSize,
+  compareByDateDesc,
   decodePageCursor,
   pageOf,
   type PageCursor,
@@ -99,6 +101,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const accountIds = accounts.map((account) => account.id)
   const needle = likeNeedle(query)
   const messages: MessageSummary[] = []
+  // A relay draft also exists as a mirrored draft of the mailbox that stores it;
+  // list it once, under the relay account that owns it.
+  const hiddenDraftIds =
+    folder === null || folder === 'draft' ? await relayDraftMirrorIds(context.env) : []
+  const exclusion =
+    hiddenDraftIds.length > 0
+      ? ` AND id NOT IN (${hiddenDraftIds.map(() => '?').join(', ')})`
+      : ''
 
   if (accountIds.length > 0) {
     const placeholders = accountIds.map(() => '?').join(', ')
@@ -107,10 +117,11 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     if (folder) {
       imapParams.push(folder)
     }
+    imapParams.push(...hiddenDraftIds)
     imapParams.push(...pageParams(before), limit)
     try {
       const rows = await context.env.DB.prepare(
-        `SELECT * FROM imap_messages WHERE (lower(subject) LIKE ? OR lower(snippet) LIKE ? OR lower(search_text) LIKE ? OR lower(from_email) LIKE ? OR lower(ifnull(from_name, '')) LIKE ? OR lower(to_json) LIKE ? OR lower(cc_json) LIKE ?) AND account_id IN (${placeholders})${folderClause}${pageClause(before)} ORDER BY sent_at DESC, id DESC LIMIT ?`,
+        `SELECT * FROM imap_messages WHERE (lower(subject) LIKE ? OR lower(snippet) LIKE ? OR lower(search_text) LIKE ? OR lower(from_email) LIKE ? OR lower(ifnull(from_name, '')) LIKE ? OR lower(to_json) LIKE ? OR lower(cc_json) LIKE ?) AND account_id IN (${placeholders})${folderClause}${exclusion}${pageClause(before)} ORDER BY sent_at DESC, id DESC LIMIT ?`,
       )
         .bind(...imapParams)
         .all<ImapMessageRow>()
@@ -129,9 +140,10 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       if (folder) {
         legacyParams.push(folder)
       }
+      legacyParams.push(...hiddenDraftIds)
       legacyParams.push(...pageParams(before), limit)
       const rows = await context.env.DB.prepare(
-        `SELECT * FROM imap_messages WHERE (lower(subject) LIKE ? OR lower(snippet) LIKE ? OR lower(from_email) LIKE ? OR lower(ifnull(from_name, '')) LIKE ? OR lower(to_json) LIKE ? OR lower(cc_json) LIKE ?) AND account_id IN (${placeholders})${folderClause}${pageClause(before)} ORDER BY sent_at DESC, id DESC LIMIT ?`,
+        `SELECT * FROM imap_messages WHERE (lower(subject) LIKE ? OR lower(snippet) LIKE ? OR lower(from_email) LIKE ? OR lower(ifnull(from_name, '')) LIKE ? OR lower(to_json) LIKE ? OR lower(cc_json) LIKE ?) AND account_id IN (${placeholders})${folderClause}${exclusion}${pageClause(before)} ORDER BY sent_at DESC, id DESC LIMIT ?`,
       )
         .bind(...legacyParams)
         .all<ImapMessageRow>()
@@ -168,11 +180,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     }
   }
 
-  messages.sort(
-    (left, right) =>
-      new Date(right.date).getTime() - new Date(left.date).getTime() ||
-      left.id.localeCompare(right.id),
-  )
+  messages.sort(compareByDateDesc)
   const page = pageOf(messages, limit)
   await searchLabels(context.env, page.items)
 

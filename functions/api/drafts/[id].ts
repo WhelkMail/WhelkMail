@@ -5,7 +5,7 @@ import { deleteDraftById } from '../../_lib/mail/drafts'
 export const onRequestDelete: PagesFunction<Env> = async (context) => {
   const id = context.params.id as string
   try {
-    await deleteDraftById(context.env, id)
+    await deleteDraftById(context.env, id, (promise) => context.waitUntil(promise))
   } catch (error) {
     return fail(
       'Deleting the draft failed',

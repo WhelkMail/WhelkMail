@@ -99,10 +99,12 @@ MESSAGE="Release 0.1.0" sh scripts/publish-public.sh
 SOURCE=feature-x sh scripts/publish-public.sh      # publish another branch
 ```
 
-The script refuses to run if `wrangler.toml`, `worker/wrangler.toml` or
-`.dev.vars` is tracked, builds a snapshot commit whose parent is `public/main`
-(so the public history stays linear and pushes are fast-forwards) and pushes
-the tree of `SOURCE`.
+The script refuses to run if a personal config file is tracked in `SOURCE`:
+`wrangler.toml`, `worker/wrangler.toml`, `.dev.vars` and its variants
+(`.dev.vars.production`, …), `.env` and `.env.*`. The `*.example` templates are
+allowed and expected. It then builds a snapshot commit whose parent is
+`public/main` (so the public history stays linear and pushes are fast-forwards)
+and pushes the tree of `SOURCE`.
 
 The snapshot commit is also stored in the local `public-release` branch. If the
 push fails (for example because no credentials are available), nothing is lost:

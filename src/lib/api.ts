@@ -21,6 +21,7 @@ import type {
   MessageSearchResult,
   PushPrefs,
   PushSubscriptionInput,
+  RetentionSummary,
   SearchScope,
   SendPayload,
   StorageOptions,
@@ -178,6 +179,17 @@ export const api = {
   },
   updateSettings(input: Partial<AppSettings>): Promise<AppSettings> {
     return request('/api/settings', { method: 'PATCH', body: JSON.stringify(input) })
+  },
+  retention(): Promise<{ retention: RetentionSummary }> {
+    return request('/api/retention')
+  },
+  resetRetentionMirror(
+    accountId?: string,
+  ): Promise<{ ok: boolean; accounts: number; folders: number; retention: RetentionSummary }> {
+    return request('/api/retention', {
+      method: 'POST',
+      body: JSON.stringify(accountId ? { accountId } : {}),
+    })
   },
   pushKey(): Promise<{ publicKey: string | null }> {
     return request('/api/push/key')

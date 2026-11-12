@@ -98,5 +98,118 @@ export async function pruneMirroredMetadata(
   if (deleted > 0) {
     console.log(`[retention] deleted=${deleted} days=${days} cutoff=${cutoff} truncated=${truncated}`)
   }
+  await recordRetentionRun(env, { deleted, cutoff }).catch((error) => {
+    if (!isSchemaError(error)) {
+      console.log(`[retention] stats not saved: ${error instanceof Error ? error.message : error}`)
+    }
+  })
   return { days, deleted, cutoff, truncated }
+}
+
+export const RETENTION_STATS_KEY = 'retention_stats'
+
+export interface RetentionStats {
+  /** ISO timestamp of the last pruning run, or null when it never ran. */
+  lastRunAt: string | null
+  /** Messages removed by the last run. */
+  lastDeleted: number
+  /** Messages removed since the counter was introduced. */
+  deletedTotal: number
+  /** Oldest `sent_at` still kept by the last run. */
+  cutoff: string | null
+}
+
+export const EMPTY_RETENTION_STATS: RetentionStats = {
+  lastRunAt: null,
+  lastDeleted: 0,
+  deletedTotal: 0,
+  cutoff: null,
+}
+
+function toCount(value: unknown): number {
+  const count = Number(value)
+  return Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
+}
+
+/** Tolerant reader for the stored counter (old rows or hand-edited values). */
+export function parseRetentionStats(value: string | null | undefined): RetentionStats {
+  if (!value) {
+    return { ...EMPTY_RETENTION_STATS }
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    return { ...EMPTY_RETENTION_STATS }
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return { ...EMPTY_RETENTION_STATS }
+  }
+  const record = parsed as Record<string, unknown>
+  return {
+    lastRunAt: typeof record.lastRunAt === 'string' ? record.lastRunAt : null,
+    lastDeleted: toCount(record.lastDeleted),
+    deletedTotal: toCount(record.deletedTotal),
+    cutoff: typeof record.cutoff === 'string' ? record.cutoff : null,
+  }
+}
+
+/** Fold one run into the stored counter. */
+export function mergeRetentionStats(
+  previous: RetentionStats,
+  run: { at: string; deleted: number; cutoff: string | null },
+): RetentionStats {
+  return {
+    lastRunAt: run.at,
+    lastDeleted: toCount(run.deleted),
+    deletedTotal: previous.deletedTotal + toCount(run.deleted),
+    cutoff: run.cutoff ?? previous.cutoff,
+  }
+}
+
+export async function getRetentionStats(env: Env): Promise<RetentionStats> {
+  try {
+    const row = await env.DB.prepare('SELECT value FROM app_settings WHERE key = ?')
+      .bind(RETENTION_STATS_KEY)
+      .first<{ value: string }>()
+    return parseRetentionStats(row?.value)
+  } catch (error) {
+    if (isSchemaError(error)) {
+      return { ...EMPTY_RETENTION_STATS }
+    }
+    throw error
+  }
+}
+
+export async function recordRetentionRun(
+  env: Env,
+  run: { deleted: number; cutoff: string | null },
+): Promise<RetentionStats> {
+  const previous = await getRetentionStats(env)
+  const next = mergeRetentionStats(previous, {
+    at: new Date().toISOString(),
+    deleted: run.deleted,
+    cutoff: run.cutoff,
+  })
+  await env.DB.prepare(
+    'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+  )
+    .bind(RETENTION_STATS_KEY, JSON.stringify(next))
+    .run()
+  return next
+}
+
+/**
+ * Forget the sync cursors of an IMAP account so the next sync walks the mailbox
+ * again and re-ingests the metadata that retention removed.
+ *
+ * Mirror rows are left in place: the rescan upserts what is still there and
+ * recreates what retention pruned. Label assignments were deleted with the
+ * pruned rows and cannot be recovered this way.
+ */
+export async function resetMirrorCursors(env: Env, accountId: string): Promise<number> {
+  const result = await env.DB.prepare('DELETE FROM imap_sync WHERE account_id = ?')
+    .bind(accountId)
+    .run()
+  return result.meta?.changes ?? 0
 }

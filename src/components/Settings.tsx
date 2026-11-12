@@ -28,6 +28,7 @@ import { cn, formatBytes } from '../lib/utils'
 import { DeletionPanel } from './DeletionPanel'
 import { FiltersSettings } from './FiltersSettings'
 import { PushSettings } from './PushSettings'
+import { RetentionSettings } from './RetentionSettings'
 import { SyncPanel } from './SyncPanel'
 import { TwoFactorSettings } from './TwoFactorSettings'
 
@@ -941,6 +942,7 @@ export function Settings({
                 </select>
                 <p className="mt-1 text-[11px] text-muted">{t('settings.retentionHint')}</p>
               </label>
+              <RetentionSettings days={metadataRetentionDays} />
             </div>
 
             <div className="mt-3 rounded-2xl border border-line bg-white p-5">

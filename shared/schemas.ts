@@ -165,6 +165,10 @@ export const messageLabelsSchema = z.object({
   labelIds: z.array(z.string().min(1).max(64)).max(30),
 })
 
+export const retentionResetSchema = z.object({
+  accountId: z.string().min(1).max(64).optional(),
+})
+
 export const contactCreateSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(254),

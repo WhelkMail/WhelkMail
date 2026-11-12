@@ -95,7 +95,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const saved = await saveDraft(context.env, account, mime)
       draftId = imapMessageId(account.id, 'draft', saved.uid)
       if (input.draftId) {
-        await deleteDraftById(context.env, input.draftId).catch(() => undefined)
+        await deleteDraftById(context.env, input.draftId, (promise) => context.waitUntil(promise)).catch(
+          () => undefined,
+        )
       }
       await queueSync(context.env, account, 'draft', (promise) => context.waitUntil(promise)).catch(() => undefined)
     } catch (error) {
@@ -128,6 +130,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   if (copyTarget) {
     try {
       storageKey = await storeCopyInMailbox(context.env, copyTarget, mime, 'draft')
+      await queueSync(context.env, copyTarget, 'draft', (promise) => context.waitUntil(promise)).catch(
+        () => undefined,
+      )
     } catch (error) {
       return fail(
         'Saving the draft failed',

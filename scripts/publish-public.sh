@@ -26,12 +26,16 @@ die() {
 command -v git >/dev/null 2>&1 || die "git not found"
 git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository"
 
-# Never publish files that describe a specific installation.
-for file in wrangler.toml worker/wrangler.toml .dev.vars; do
-  if git cat-file -e "$SOURCE:$file" 2>/dev/null; then
-    die "$file is tracked in $SOURCE; untrack it with: git rm --cached $file"
-  fi
-done
+# Never publish files that describe a specific installation. The patterns match
+# the .gitignore rules: the base file, its suffixed variants and the generic
+# env files; the *.example templates are meant to be published.
+denied=$(git ls-tree -r --name-only "$SOURCE" \
+  | grep -E '(^|/)(wrangler\.toml|\.dev\.vars(\.[A-Za-z0-9_-]+)?|\.env(\.[A-Za-z0-9_-]+)?)$' \
+  | grep -v '\.example$' || true)
+if [ -n "$denied" ]; then
+  die "these files describe a specific installation and must stay untracked in $SOURCE:
+$denied"
+fi
 
 git fetch "$REMOTE" "$TARGET" >/dev/null 2>&1 || die "cannot fetch $REMOTE/$TARGET"
 

@@ -7,6 +7,8 @@ import {
   type ImapCopyPointer,
 } from '../../../shared/relay-copy'
 import { deleteMessageAt, fetchMessageAt, saveDraft, appendToSent } from './imap'
+import { draftMirrorIdsFromPointers } from './ids'
+import { isSchemaError } from '../schema'
 import { getStorage } from '../storage'
 
 /**
@@ -45,6 +47,31 @@ export async function storeCopyInMailbox(
 ): Promise<string> {
   const appended = kind === 'sent' ? await appendToSent(env, target, mime) : await saveDraft(env, target, mime)
   return encodeImapPointer({ accountId: target.id, folder: appended.folder, uid: appended.uid })
+}
+
+/**
+ * Mirror ids of the drafts that a relay account keeps in another mailbox.
+ *
+ * The appended draft is mirrored as a normal IMAP draft of the target account
+ * (\`i_<account>.draft.<uid>\`), while the app lists the relay row. Passing these
+ * ids to the Drafts query keeps the same draft from appearing twice.
+ */
+export async function relayDraftMirrorIds(env: Env, limit = 200): Promise<string[]> {
+  let rows: { storage_key: string }[]
+  try {
+    const result = await env.DB.prepare(
+      "SELECT storage_key FROM messages WHERE folder = 'draft' AND storage_driver = 'imap' AND storage_key LIKE 'imap:%' ORDER BY sent_at DESC LIMIT ?",
+    )
+      .bind(limit)
+      .all<{ storage_key: string }>()
+    rows = result.results
+  } catch (error) {
+    if (!isSchemaError(error)) {
+      throw error
+    }
+    return []
+  }
+  return draftMirrorIdsFromPointers(rows.map((row) => row.storage_key))
 }
 
 export async function loadCopyBytes(env: Env, pointer: ImapCopyPointer): Promise<Uint8Array | null> {

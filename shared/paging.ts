@@ -66,6 +66,24 @@ export function pageOf<T extends Pageable>(
   return { items: page, nextCursor }
 }
 
+/**
+ * Sort merged pages exactly like the SQL side does (`ORDER BY sent_at DESC,
+ * id DESC`).
+ *
+ * The cursor is the (date, id) of the last message of a page and the next query
+ * asks for `sent_at < date OR (sent_at = date AND id < id)`. If the merge
+ * ordered ties by ascending id while the query orders them descending, two
+ * messages sharing a timestamp would be served twice and, after the client
+ * deduplicates them, silently drop out of the list. Keep both sides in step.
+ */
+export function compareByDateDesc<T extends Pageable>(left: T, right: T): number {
+  const delta = (Date.parse(right.date) || 0) - (Date.parse(left.date) || 0)
+  if (delta !== 0) {
+    return delta
+  }
+  return right.id.localeCompare(left.id)
+}
+
 /** Append a page, dropping messages that were already displayed. */
 export function mergePage<T extends { id: string }>(current: T[], incoming: T[]): T[] {
   if (incoming.length === 0) {

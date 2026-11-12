@@ -22,10 +22,11 @@ jobs:
         run: npm ci
 
       # A personal deployment config must never reach the public repository:
-      # it carries the Pages URL and account-scoped resource identifiers.
+      # it carries the Pages URL and account-scoped resource identifiers. The
+      # list mirrors the patterns in .gitignore, minus the published templates.
       - name: No personal config
         run: |
-          tracked=$(git ls-files -- 'wrangler.toml' 'worker/wrangler.toml' '.dev.vars' '.dev.vars.*')
+          tracked=$(git ls-files -- 'wrangler.toml' 'worker/wrangler.toml' '.dev.vars' '.dev.vars.*' '.env' '.env.*' | grep -v '\.example$' || true)
           if [ -n "$tracked" ]; then
             echo "These files must stay untracked:"
             echo "$tracked"

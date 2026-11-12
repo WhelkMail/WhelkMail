@@ -161,20 +161,26 @@ export async function listMirrorMessages(
   folder: Folder,
   limit = 100,
   before?: PageCursor | null,
+  excludeIds: string[] = [],
 ): Promise<MessageSummary[]> {
+  // Exclusions must run inside SQL: filtering after LIMIT would shrink the page
+  // and, because the next cursor is only returned for a full page, hide older
+  // messages. Drafts a relay account keeps in another mailbox are the use case.
+  const excluded = excludeIds.slice(0, 200)
+  const exclusion = excluded.length > 0 ? ` AND id NOT IN (${excluded.map(() => '?').join(', ')})` : ''
   const rows = before
     ? await env.DB.prepare(
         `SELECT * FROM imap_messages
-         WHERE account_id = ? AND folder = ?
+         WHERE account_id = ? AND folder = ?${exclusion}
            AND (sent_at < ? OR (sent_at = ? AND id < ?))
          ORDER BY sent_at DESC, id DESC LIMIT ?`,
       )
-        .bind(account.id, folder, before.date, before.date, before.id, limit)
+        .bind(account.id, folder, ...excluded, before.date, before.date, before.id, limit)
         .all<ImapMessageRow>()
     : await env.DB.prepare(
-        'SELECT * FROM imap_messages WHERE account_id = ? AND folder = ? ORDER BY sent_at DESC, id DESC LIMIT ?',
+        `SELECT * FROM imap_messages WHERE account_id = ? AND folder = ?${exclusion} ORDER BY sent_at DESC, id DESC LIMIT ?`,
       )
-        .bind(account.id, folder, limit)
+        .bind(account.id, folder, ...excluded, limit)
         .all<ImapMessageRow>()
   return rows.results.map((row) => imapMessageSummary(row, account))
 }

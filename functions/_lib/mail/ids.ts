@@ -1,4 +1,5 @@
 import type { Folder } from '../../../shared/types'
+import { parseImapPointer } from '../../../shared/relay-copy'
 import { toBase64Url } from '../crypto'
 
 const encoder = new TextEncoder()
@@ -43,4 +44,25 @@ export function relayMessageId(id: string): string {
 
 export function parseRelayMessageId(id: string): string | null {
   return id.startsWith('r_') ? id.slice(2) : null
+}
+
+/**
+ * Mirror ids of the drafts that a relay account appends to another mailbox.
+ *
+ * A relay draft is listed from its `messages` row; the mailbox copy is mirrored
+ * as a normal IMAP draft of the target account, so its id is filtered out of the
+ * Drafts list and of draft searches. Non-pointer storage keys (Drive/R2 objects)
+ * are ignored.
+ */
+export function draftMirrorIdsFromPointers(
+  keys: Array<string | null | undefined>,
+): string[] {
+  const ids: string[] = []
+  for (const key of keys) {
+    const pointer = parseImapPointer(key)
+    if (pointer) {
+      ids.push(imapMessageId(pointer.accountId, 'draft', pointer.uid))
+    }
+  }
+  return ids
 }

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { Env } from '../functions/_lib/env'
-import { pruneMirroredMetadata } from '../functions/_lib/retention'
+import {
+  mergeRetentionStats,
+  parseRetentionStats,
+  pruneMirroredMetadata,
+} from '../functions/_lib/retention'
 
 interface MessageRow {
   id: string
@@ -140,5 +144,61 @@ describe('metadata retention', () => {
     expect(result.deleted).toBe(5000)
     expect(result.truncated).toBe(true)
     expect(db.messages).toHaveLength(200)
+  })
+})
+
+describe('retention stats', () => {
+  it('reads a stored counter and tolerates garbage', () => {
+    expect(parseRetentionStats(null)).toEqual({
+      lastRunAt: null,
+      lastDeleted: 0,
+      deletedTotal: 0,
+      cutoff: null,
+    })
+    expect(parseRetentionStats('not json')).toEqual(parseRetentionStats(null))
+    expect(parseRetentionStats('"text"')).toEqual(parseRetentionStats(null))
+    expect(
+      parseRetentionStats(
+        '{"lastRunAt":"2026-11-09T10:00:00.000Z","lastDeleted":12,"deletedTotal":40,"cutoff":"2026-08-11T00:00:00.000Z"}',
+      ),
+    ).toEqual({
+      lastRunAt: '2026-11-09T10:00:00.000Z',
+      lastDeleted: 12,
+      deletedTotal: 40,
+      cutoff: '2026-08-11T00:00:00.000Z',
+    })
+  })
+
+  it('ignores negative or non numeric counters', () => {
+    expect(parseRetentionStats('{"lastDeleted":-4,"deletedTotal":"x"}')).toMatchObject({
+      lastDeleted: 0,
+      deletedTotal: 0,
+    })
+  })
+
+  it('accumulates runs and keeps the last cutoff', () => {
+    const first = mergeRetentionStats(parseRetentionStats(null), {
+      at: '2026-11-09T10:00:00.000Z',
+      deleted: 30,
+      cutoff: '2026-08-11T00:00:00.000Z',
+    })
+    expect(first).toEqual({
+      lastRunAt: '2026-11-09T10:00:00.000Z',
+      lastDeleted: 30,
+      deletedTotal: 30,
+      cutoff: '2026-08-11T00:00:00.000Z',
+    })
+
+    const second = mergeRetentionStats(first, {
+      at: '2026-11-09T11:00:00.000Z',
+      deleted: 0,
+      cutoff: null,
+    })
+    expect(second).toMatchObject({
+      lastRunAt: '2026-11-09T11:00:00.000Z',
+      lastDeleted: 0,
+      deletedTotal: 30,
+      cutoff: '2026-08-11T00:00:00.000Z',
+    })
   })
 })

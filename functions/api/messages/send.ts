@@ -205,7 +205,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
     }
     if (input.draftId) {
-      await deleteDraftById(context.env, input.draftId).catch(() => undefined)
+      await deleteDraftById(context.env, input.draftId, (promise) => context.waitUntil(promise)).catch(
+        () => undefined,
+      )
     }
     await queueSync(context.env, account, 'sent', (promise) => context.waitUntil(promise)).catch(() => undefined)
     return json({ ok: true, warning, sentFolder })
@@ -319,7 +321,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       status: 'sent',
     })
     if (input.draftId) {
-      await deleteDraftById(context.env, input.draftId).catch(() => undefined)
+      await deleteDraftById(context.env, input.draftId, (promise) => context.waitUntil(promise)).catch(
+        () => undefined,
+      )
     }
     return json({ ok: true, message: relayMessageSummary(row, account), warning }, 201)
   } catch (error) {

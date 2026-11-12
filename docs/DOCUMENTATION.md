@@ -45,7 +45,15 @@ Key constraints:
 2. The list is served from the D1 mirror first. If the folder has never been synced, the request bootstraps the newest headers from IMAP; otherwise a stale folder returns the cached list immediately and schedules a background sync.
 3. The sync reads `UIDNEXT` from `SELECT` and fetches new UIDs plus bounded backfill windows instead of running `UID SEARCH ALL` on every pass. `BODYSTRUCTURE` is parsed locally to detect attachments without downloading message bodies.
 4. Headers are parsed with `postal-mime`; results from all accounts are merged and sorted. Relay accounts contribute their D1 `messages` rows.
-5. After the response, the server prefetches the newest few bodies (one message per account in the unified view, up to three for a selected account) into the D1 body cache with `UID FETCH ... (BODY.PEEK[])` on a single connection.
+5. The merge sorts with `compareByDateDesc` (`sent_at` descending, `id` descending) — the same order as the SQL `ORDER BY sent_at DESC, id DESC` and the keyset cursor (`sent_at < ? OR (sent_at = ? AND id < ?)`). The two sides must agree: with an ascending tie-break, two messages sharing a timestamp would be returned twice and, after the client deduplicates with `mergePage`, silently disappear from the list.
+6. After the response, the server prefetches the newest few bodies (one message per account in the unified view, up to three for a selected account) into the D1 body cache with `UID FETCH ... (BODY.PEEK[])` on a single connection.
+
+### Search
+
+1. `GET /api/messages/search?q=...` returns matching messages from the D1 mirror (Inbox, Sent, Drafts, Spam, optionally one folder) plus matching contacts.
+2. Matching is a case-insensitive **substring** test (`lower(column) LIKE ?`), not a tokenized full-text index: no stemming, no fuzzy matching, and every term must appear inside the searched columns (`subject`, `snippet`, `from_email`, `from_name`, `to_json`, `cc_json`, and `search_text` or `body_text`).
+3. `imap_messages.search_text` keeps up to 4.000 characters of body text, filled when a body is parsed (message opened, archived, or snippet backfill). Search therefore matches body words only for messages indexed so far; the rest still match sender, recipients and subject. Relay rows search their stored `body_text`.
+4. Results are paginated with the same (date, id) cursor and merge order as the list endpoint.
 
 ### Read a message
 
@@ -82,7 +90,7 @@ Key constraints:
   - Flags are `(\Draft \Seen)`. The UID comes from `APPENDUID` when the server supports UIDPLUS, otherwise from the folder's `UIDNEXT - 1` or from the highest UID after a search.
   - The row in `messages` keeps `folder='draft'`, `storage_driver='imap'` and a pointer in `storage_key` (`imap:<accountId>:<encodedFolder>:<uid>`). Reopening the draft fetches that message back with `UID FETCH`; autosave appends the new version and expunges the previous copy; deleting the draft or sending from it removes the copy from that mailbox.
   - There is **no fallback to Drive/R2** in this mode. If the target account is missing or not connected, saving fails with `sent_copy_target_not_connected`; IMAP failures return `draft_save_failed`. The composer shows the error and can still be closed (with confirmation) instead of trapping the message.
-  - The same draft is visible twice in the UI: as the relay account's row in **Drafts** (D1) and, once the target folder is synced, as a real message in that account's Drafts folder.
+  - The mailbox copy is mirrored as an ordinary draft of the target account (`i_<account>.draft.<uid>`). The Drafts list and draft searches filter those ids out (`relayDraftMirrorIds` → `draftMirrorIdsFromPointers`), so the draft is listed once, under the relay account that owns it. Saving or deleting a draft queues a sync of the target Drafts folder, so the mirror follows the copy that was just appended or expunged. The exclusion runs inside SQL, before `LIMIT`, because filtering a page afterwards would shorten it and drop the next cursor.
 - Autosave runs 5 seconds after the last change and every 30 seconds while changes remain. Closing the composer saves pending changes first; if the draft cannot be saved the user is asked whether to discard it.
 - An explicit **Save draft** closes the composer and opens the Drafts folder.
 
@@ -175,6 +183,10 @@ The folder list reads from `imap_messages` first. Opening a folder does not bloc
 `imap_body_cache` is a bounded, best-effort cache: message bodies up to 512 KB are kept for 3 days, with a hard 64 MB cap. The cron worker deletes expired rows and evicts the oldest bodies until the cache is back under the cap; opportunistic cleanup also runs every 50 writes. It never replaces the provider or the long-term archive; it only avoids repeated IMAP fetches for recently listed/opened messages.
 
 `accounts.auto_sync` enables the cron worker to advance Inbox, Sent, Drafts and Spam every 5 minutes. Each run processes one bounded chunk per folder and resumes on the next run. New IMAP accounts enable it by default; existing accounts can still rely on the sync scheduled when a folder is opened.
+
+**Metadata retention.** `app_settings.metadata_retention_days` is `0` by default (keep everything) and is edited from Settings → Appearance. When set, the cron worker deletes `imap_messages` rows older than the window (never drafts, never anything on the provider) together with their `message_labels` rows, in batches of 500 up to 5.000 per run. Pruned messages no longer appear in folder lists, search results or label views, and the incremental sync does not pull them back because it tracks `max_uid`/`min_uid` instead of re-scanning UIDs. Only a direct message id (for example an open link) still opens one, because reading a message falls back to IMAP when the mirror has no row. The R2/Drive archive copy is untouched, and lowering then raising the window does not restore the removed rows.
+
+Each pruning run is recorded in `app_settings.retention_stats` (`lastRunAt`, `lastDeleted`, `deletedTotal`, `cutoff`), read by `GET /api/retention` and shown in Settings → Appearance. `POST /api/retention` with an optional `{ accountId }` clears the `imap_sync` cursors of the IMAP accounts and queues a new inbox sync: the next runs walk the mailbox again, upsert the rows that are still in the mirror and recreate the pruned ones. Label assignments were deleted with the pruned rows and are not recovered, and a full rescan costs one metadata chunk per folder per sync run.
 
 `accounts.archive_imap_bodies` is optional; `accounts.imap_archive_driver` selects `r2` or `drive`. R2 requires a bound `BUCKET`; Drive requires the account's Google Drive OAuth connection. The sync stores the raw EML under `imap/<account>/<folder>/<uidvalidity>/<folder>-<uid>.eml` and records `archived`/`archive_key` in `imap_messages`. With Drive, `archive_key` is the Drive file id. Reading and attachment/download endpoints use the D1 body cache first, then the archive, and fall back to IMAP otherwise. When disabled, bodies and attachments stay on the provider.
 

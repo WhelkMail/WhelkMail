@@ -231,9 +231,22 @@ const en: Record<string, string> = {
     'Remote images can be used to track when a message is opened. You can still hide them per message.',
   'settings.retention': 'Synced message metadata',
   'settings.retentionHint':
-    'Messages older than this are removed from the local mirror. They stay on the provider and are read again when you open them. Drafts are never removed.',
+    'Messages older than this are removed from the local mirror. They stay on the provider. Drafts are never removed.',
   'settings.retentionForever': 'Keep everything',
   'settings.retentionDays': 'Keep {days} days',
+  'settings.retentionConfirm':
+    'Removed messages also lose their labels and disappear from lists, search and label views until the metadata is downloaded again. Continue?',
+  'settings.retentionMirror': 'Message mirror',
+  'settings.retentionNeverRun': 'No cleanup has run yet.',
+  'settings.retentionLastRun': 'Last cleanup: {date}, {count} messages removed.',
+  'settings.retentionDeletedTotal': 'Removed in total: {count}.',
+  'settings.retentionWarning':
+    'These messages are gone from lists and search, and their labels with them. Downloading the metadata again brings them back without labels.',
+  'settings.retentionRestore': 'Download metadata again',
+  'settings.retentionRestoreHint': 'Reads the mailbox again from the provider.',
+  'settings.retentionRestoreConfirm':
+    'Clear the sync cursors of the IMAP accounts and download their metadata again? This can take a while and runs in the background.',
+  'settings.retentionRestoreDone': 'Queued a new scan for {accounts} accounts.',
   'settings.delete': 'Delete',
   'settings.deleteConfirm': 'Delete account {email}?',
   'settings.accountUpdated': 'Account updated',
@@ -787,9 +800,22 @@ const it: Record<string, string> = {
     'Le immagini remote possono essere usate per tracciare l’apertura di un messaggio. Puoi comunque nasconderle per singolo messaggio.',
   'settings.retention': 'Metadati dei messaggi sincronizzati',
   'settings.retentionHint':
-    'I messaggi più vecchi vengono rimossi dalla copia locale. Restano sul provider e vengono riletti quando li apri. Le bozze non vengono mai rimosse.',
+    'I messaggi più vecchi vengono rimossi dalla copia locale. Restano sul provider. Le bozze non vengono mai rimosse.',
   'settings.retentionForever': 'Mantieni tutto',
   'settings.retentionDays': 'Mantieni {days} giorni',
+  'settings.retentionConfirm':
+    'I messaggi rimossi perdono anche le etichette e spariscono da liste, ricerca e vista etichette finché non riscarichi i metadati. Continuare?',
+  'settings.retentionMirror': 'Copia dei messaggi',
+  'settings.retentionNeverRun': 'Nessuna pulizia è ancora stata eseguita.',
+  'settings.retentionLastRun': 'Ultima pulizia: {date}, {count} messaggi rimossi.',
+  'settings.retentionDeletedTotal': 'Rimossi in totale: {count}.',
+  'settings.retentionWarning':
+    'Questi messaggi non compaiono più in liste e ricerca, e le loro etichette sono perse. Riscaricare i metadati li riporta senza etichette.',
+  'settings.retentionRestore': 'Riscarica i metadati',
+  'settings.retentionRestoreHint': 'Rilegge la casella dal provider.',
+  'settings.retentionRestoreConfirm':
+    'Azzerare i cursori di sincronizzazione degli account IMAP e riscaricare i loro metadati? Può richiedere tempo e avviene in background.',
+  'settings.retentionRestoreDone': 'Nuova scansione accodata per {accounts} account.',
   'settings.delete': 'Elimina',
   'settings.deleteConfirm': 'Eliminare l’account {email}?',
   'settings.accountUpdated': 'Account aggiornato',

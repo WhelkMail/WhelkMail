@@ -13,9 +13,11 @@ import { applyAccountLabel, applyFilters } from '../../_lib/filters'
 import { listFolder, listFolderByUids } from '../../_lib/mail/imap'
 import { imapMessageId, parseImapMessageId, parseRelayMessageId } from '../../_lib/mail/ids'
 import { dateOf, parseHeaders, toMailbox, toMailboxes } from '../../_lib/mail/parse'
+import { relayDraftMirrorIds } from '../../_lib/mail/relay-target'
 import { isSchemaError } from '../../_lib/schema'
 import {
   clampPageSize,
+  compareByDateDesc,
   decodePageCursor,
   pageOf,
   type PageCursor,
@@ -365,11 +367,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
   if (labelId) {
     const { messages, errors } = await loadByLabel(context.env, accounts, labelId, limit, before)
-    messages.sort(
-      (left, right) =>
-        new Date(right.date).getTime() - new Date(left.date).getTime() ||
-        left.id.localeCompare(right.id),
-    )
+    messages.sort(compareByDateDesc)
     const page = pageOf(messages, limit)
     return json({ messages: page.items, errors, nextCursor: page.nextCursor })
   }
@@ -377,6 +375,10 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const messages: MessageSummary[] = []
   const errors: AccountError[] = []
   let syncing = false
+  // Drafts that a relay account stores in another mailbox are mirrored there as
+  // ordinary drafts; hide those rows so the draft is listed once, under the
+  // relay account that owns it.
+  const hiddenDraftIds = folder === 'draft' ? await relayDraftMirrorIds(context.env) : []
 
   for (const account of accounts) {
     if (account.kind === 'imap' && !account.secret_enc) {
@@ -396,7 +398,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         let mirrored: MessageSummary[] = []
         const mirrorStartedAt = Date.now()
         try {
-          mirrored = await listMirrorMessages(context.env, account, folder, limit, before)
+          mirrored = await listMirrorMessages(
+            context.env,
+            account,
+            folder,
+            limit,
+            before,
+            hiddenDraftIds,
+          )
           syncState = await getSyncState(context.env, account.id, folder)
         } catch (error) {
           if (!isSchemaError(error)) {
@@ -412,7 +421,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
           try {
             const result = await runSyncChunk(context.env, account, folder)
             const rereadStartedAt = Date.now()
-            mirrored = await listMirrorMessages(context.env, account, folder, limit, before)
+            mirrored = await listMirrorMessages(
+              context.env,
+              account,
+              folder,
+              limit,
+              before,
+              hiddenDraftIds,
+            )
             mirrorMs += Date.now() - rereadStartedAt
             loaded =
               mirrored.length > 0
@@ -466,11 +482,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     }
   }
 
-  messages.sort(
-    (left, right) =>
-      new Date(right.date).getTime() - new Date(left.date).getTime() ||
-      left.id.localeCompare(right.id),
-  )
+  messages.sort(compareByDateDesc)
   const page = pageOf(messages, limit)
   return json({ messages: page.items, errors, syncing, nextCursor: page.nextCursor })
 }
