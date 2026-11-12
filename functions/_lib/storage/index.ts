@@ -57,27 +57,68 @@ export function copyObjectKey(
  * would stop working. If the deployment has any object storage, the message is
  * written there instead and the row records that driver.
  */
-export function rescueStorage(
+export function rescueCandidates(
   env: Env,
   row: AccountRow,
-): { storage: StorageAdapter; driver: 'drive' | 'r2' } | null {
+): { storage: StorageAdapter; driver: 'drive' | 'r2' }[] {
+  const candidates: { storage: StorageAdapter; driver: 'drive' | 'r2' }[] = []
   if (row.drive_refresh_token_enc) {
-    return { storage: new DriveStorage(env, row), driver: 'drive' }
+    candidates.push({ storage: new DriveStorage(env, row), driver: 'drive' })
   }
   if (env.BUCKET) {
-    return { storage: new R2Storage(env), driver: 'r2' }
+    candidates.push({ storage: new R2Storage(env), driver: 'r2' })
+  }
+  return candidates
+}
+
+/** Adapter for one archive driver of an IMAP account. */
+export function archiveStorageForDriver(
+  env: Env,
+  row: AccountRow,
+  driver: string | null | undefined,
+): StorageAdapter | null {
+  if (driver === 'r2') {
+    return env.BUCKET ? new R2Storage(env) : null
+  }
+  if (driver === 'drive') {
+    return row.drive_refresh_token_enc ? new DriveStorage(env, row) : null
   }
   return null
 }
 
+/**
+ * Storage for **new** archives, i.e. the destination currently configured on the
+ * account. Reading or deleting an archived message must use the driver stored in
+ * its row: the account can switch between R2 and Drive, and the objects written
+ * earlier stay where they were.
+ */
 export function getImapArchiveStorage(env: Env, row: AccountRow): StorageAdapter | null {
   if (!row.archive_imap_bodies) {
     return null
   }
-  if (row.imap_archive_driver === 'drive') {
-    return row.drive_refresh_token_enc ? new DriveStorage(env, row) : null
+  return archiveStorageForDriver(env, row, row.imap_archive_driver)
+}
+
+/**
+ * Backends to try for an archived body: the one recorded on the row first, then
+ * the other configured backend. Rows archived before the driver was recorded
+ * have no value, so both are attempted (at most two requests).
+ */
+export function archiveStorageCandidates(
+  env: Env,
+  row: AccountRow,
+  driver: string | null | undefined,
+): StorageAdapter[] {
+  const preferred = driver === 'drive' || driver === 'r2' ? driver : row.imap_archive_driver
+  const order: ('drive' | 'r2')[] = preferred === 'drive' ? ['drive', 'r2'] : ['r2', 'drive']
+  const candidates: StorageAdapter[] = []
+  for (const candidate of order) {
+    const storage = archiveStorageForDriver(env, row, candidate)
+    if (storage && !candidates.some((item) => item.driver === storage.driver)) {
+      candidates.push(storage)
+    }
   }
-  return env.BUCKET ? new R2Storage(env) : null
+  return candidates
 }
 
 export type { StorageAdapter } from './types'

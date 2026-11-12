@@ -11,7 +11,7 @@ import type { PageCursor } from '../../shared/paging'
 import type { ImapConnection, ImapHeader } from './imap/client'
 import { MISSING_FOLDER, withImap, resolveFolderName } from './mail/imap'
 import { applyAccountLabel, applyFilters } from './filters'
-import { getImapArchiveStorage, type StorageAdapter } from './storage'
+import { archiveStorageCandidates, getImapArchiveStorage } from './storage'
 import { imapMessageId } from './mail/ids'
 import { bodyText, dateOf, parseFull, parseHeaders, toMailbox, toMailboxes } from './mail/parse'
 import { indexMessageText } from './mail/search-text'
@@ -367,26 +367,32 @@ async function pruneFolder(
   accountId: string,
   folder: Folder,
   allUids: number[],
-  storage: StorageAdapter | null,
+  account: AccountRow,
   keepArchive: boolean,
 ): Promise<void> {
   const rows = await env.DB.prepare(
-    'SELECT id, uid, archive_key FROM imap_messages WHERE account_id = ? AND folder = ?',
+    'SELECT id, uid, archive_key, archive_driver FROM imap_messages WHERE account_id = ? AND folder = ?',
   )
     .bind(accountId, folder)
-    .all<{ id: string; uid: number; archive_key: string | null }>()
+    .all<{ id: string; uid: number; archive_key: string | null; archive_driver: string | null }>()
   const present = new Set(allUids)
   const stale = rows.results.filter((row) => !present.has(row.uid))
   if (stale.length === 0) {
     return
   }
-  if (storage && !keepArchive) {
+  if (!keepArchive) {
     for (const row of stale) {
-      if (row.archive_key) {
+      if (!row.archive_key) {
+        continue
+      }
+      // The object may have been written by the other backend: try the recorded
+      // driver first, then the remaining one.
+      for (const storage of archiveStorageCandidates(env, account, row.archive_driver)) {
         try {
           await storage.remove(row.archive_key)
+          break
         } catch {
-          // best effort
+          // best effort, try the next backend
         }
       }
     }
@@ -843,10 +849,9 @@ async function runSyncChunkLocked(
           const key = `imap/${account.id}/${folder}/${details.uidValidity ?? 0}/${folder}-${item.uid}.eml`
           const stored = await archiveStorage.put(key, bytes, 'message/rfc822')
           updates.push(
-            env.DB.prepare('UPDATE imap_messages SET archived = 1, archive_key = ? WHERE id = ?').bind(
-              stored.key,
-              item.id,
-            ),
+            env.DB.prepare(
+              'UPDATE imap_messages SET archived = 1, archive_key = ?, archive_driver = ? WHERE id = ?',
+            ).bind(stored.key, archiveStorage.driver, item.id),
           )
         } catch {
           // Retry on the next sync.
@@ -927,7 +932,7 @@ async function runSyncChunkLocked(
             account.id,
             folder,
             currentUids,
-            archiveStorage,
+            account,
             Boolean(account.delete_after_archive),
           )
           synced = await countMessages(env, account.id, folder)

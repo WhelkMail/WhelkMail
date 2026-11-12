@@ -117,8 +117,9 @@ export const api = {
   updateAccount(id: string, patch: AccountPatch): Promise<{ account: Account }> {
     return request(`/api/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
   },
-  deleteAccount(id: string): Promise<{ ok: boolean }> {
-    return request(`/api/accounts/${id}`, { method: 'DELETE' })
+  deleteAccount(id: string, force = false): Promise<{ ok: boolean }> {
+    const query = force ? '?force=1' : ''
+    return request(`/api/accounts/${id}${query}`, { method: 'DELETE' })
   },
   syncStatus(
     id: string,

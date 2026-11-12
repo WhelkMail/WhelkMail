@@ -249,6 +249,8 @@ const en: Record<string, string> = {
   'settings.retentionRestoreDone': 'Queued a new scan for {accounts} accounts.',
   'settings.delete': 'Delete',
   'settings.deleteConfirm': 'Delete account {email}?',
+  'settings.deleteCopiesTarget':
+    'This mailbox stores the sent copies of {accounts}. Their attachments and .eml files will no longer be downloadable. Delete it anyway?',
   'settings.accountUpdated': 'Account updated',
   'settings.connectionOk': 'Connection OK — {checks}',
   'settings.connectionFailed': 'Connection failed',
@@ -818,6 +820,8 @@ const it: Record<string, string> = {
   'settings.retentionRestoreDone': 'Nuova scansione accodata per {accounts} account.',
   'settings.delete': 'Elimina',
   'settings.deleteConfirm': 'Eliminare l’account {email}?',
+  'settings.deleteCopiesTarget':
+    'Questa casella conserva le copie inviate di {accounts}. I loro allegati e i file .eml non saranno più scaricabili. Eliminarla comunque?',
   'settings.accountUpdated': 'Account aggiornato',
   'settings.connectionOk': 'Connessione OK — {checks}',
   'settings.connectionFailed': 'Verifica fallita',

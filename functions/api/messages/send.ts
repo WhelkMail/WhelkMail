@@ -17,7 +17,7 @@ import { sendWithAccount } from '../../_lib/mail/smtp'
 import { queueSync } from '../../_lib/sync'
 import { buildMime, snippetOf } from '../../_lib/mime'
 import { getRelay, type RelayAdapter } from '../../_lib/relay'
-import { copyObjectKey, getStorage, rescueStorage } from '../../_lib/storage'
+import { copyObjectKey, getStorage, rescueCandidates } from '../../_lib/storage'
 
 interface PersistInput {
   env: Env
@@ -302,21 +302,21 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         const detail = error instanceof Error ? error.message : 'errore IMAP'
         // The message already left: keep the MIME somewhere instead of losing
         // attachments and the raw view.
-        const rescue = rescueStorage(context.env, account)
-        let rescued = false
-        if (rescue) {
+        let rescuedWith: 'drive' | 'r2' | null = null
+        for (const candidate of rescueCandidates(context.env, account)) {
           try {
-            const key = copyObjectKey(rescue.driver, account.id, 'sent', id)
-            const stored = await rescue.storage.put(key, mime, 'message/rfc822')
+            const key = copyObjectKey(candidate.driver, account.id, 'sent', id)
+            const stored = await candidate.storage.put(key, mime, 'message/rfc822')
             storageKey = stored.key
-            storageDriver = rescue.driver
-            rescued = true
+            storageDriver = candidate.driver
+            rescuedWith = candidate.driver
+            break
           } catch {
-            rescued = false
+            // Try the next backend: a revoked Drive token must not lose the copy.
           }
         }
-        warning = rescued
-          ? `Messaggio inviato, ma la copia in ${copyTarget.sent_folder || 'Sent'} di ${copyTarget.email} non è stata salvata (${detail}). Il messaggio è stato archiviato su ${rescue?.driver === 'r2' ? 'R2' : 'Google Drive'}.`
+        warning = rescuedWith
+          ? `Messaggio inviato, ma la copia in ${copyTarget.sent_folder || 'Sent'} di ${copyTarget.email} non è stata salvata (${detail}). Il messaggio è stato archiviato su ${rescuedWith === 'r2' ? 'R2' : 'Google Drive'}.`
           : `Messaggio inviato, ma la copia in ${copyTarget.sent_folder || 'Sent'} di ${copyTarget.email} non è stata salvata: ${detail}`
       }
     }

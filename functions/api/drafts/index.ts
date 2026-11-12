@@ -8,7 +8,7 @@ import { deleteDraftById } from '../../_lib/mail/drafts'
 import { saveDraft } from '../../_lib/mail/imap'
 import { imapMessageId, parseRelayMessageId } from '../../_lib/mail/ids'
 import { buildMime, snippetOf } from '../../_lib/mime'
-import { copyObjectKey, getStorage, rescueStorage } from '../../_lib/storage'
+import { copyObjectKey, getStorage, rescueCandidates } from '../../_lib/storage'
 import { removeStoredCopy, resolveCopyTarget, storeCopyInMailbox } from '../../_lib/mail/relay-target'
 import { queueSync } from '../../_lib/sync'
 
@@ -136,17 +136,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       // Losing the draft because the mailbox rejected the APPEND would throw away
       // what the user typed: fall back to object storage when the deployment has
       // any, and record that driver on the row.
-      const rescue = rescueStorage(context.env, account)
       let saved = false
-      if (rescue) {
+      for (const candidate of rescueCandidates(context.env, account)) {
         try {
-          const key = copyObjectKey(rescue.driver, account.id, 'draft', relayId)
-          const stored = await rescue.storage.put(key, mime, 'message/rfc822')
+          const key = copyObjectKey(candidate.driver, account.id, 'draft', relayId)
+          const stored = await candidate.storage.put(key, mime, 'message/rfc822')
           storageKey = stored.key
-          storageDriver = rescue.driver
+          storageDriver = candidate.driver
           saved = true
+          break
         } catch {
-          saved = false
+          // Try the next backend before giving up on the draft.
         }
       }
       if (!saved) {

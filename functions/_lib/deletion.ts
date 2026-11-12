@@ -4,7 +4,7 @@ import type { Env } from './env'
 import { moveToTrash } from './mail/imap'
 import { parseImapMessageId } from './mail/ids'
 import { parseImapPointer } from './mail/relay-target'
-import { storageForDriver } from './storage'
+import { archiveStorageForDriver, storageForDriver, type StorageAdapter } from './storage'
 import type { ImapMessageRow } from './sync'
 
 interface DeletionLogRow {
@@ -97,17 +97,22 @@ export async function deleteArchivedMessage(
 }
 
 export async function purgeAccountStorage(env: Env, account: AccountRow): Promise<void> {
-  // Keys are grouped by the driver that wrote them: an account can switch
-  // destination (Drive → R2 → mailbox), and the objects written earlier stay
-  // where they were.
-  const byDriver = new Map<string, Set<string>>()
-  const add = (driver: string | null | undefined, key: string | null | undefined): void => {
+  // Objects are grouped by the driver that wrote them: an account can switch
+  // destination (Drive → R2 → mailbox) or archive backend, and what was written
+  // earlier stays where it was.
+  const copies = new Map<string, Set<string>>()
+  const archives = new Map<string, Set<string>>()
+  const add = (
+    bucket: Map<string, Set<string>>,
+    driver: string | null | undefined,
+    key: string | null | undefined,
+  ): void => {
     if (!driver || !key) {
       return
     }
-    const keys = byDriver.get(driver) ?? new Set<string>()
+    const keys = bucket.get(driver) ?? new Set<string>()
     keys.add(key)
-    byDriver.set(driver, keys)
+    bucket.set(driver, keys)
   }
 
   try {
@@ -120,37 +125,45 @@ export async function purgeAccountStorage(env: Env, account: AccountRow): Promis
       // Pointers refer to mail kept in an IMAP mailbox: account deletion must
       // never remove messages from the provider.
       if (row.storage_key && !parseImapPointer(row.storage_key)) {
-        add(row.storage_driver, row.storage_key)
+        add(copies, row.storage_driver, row.storage_key)
       }
     }
     const archived = await env.DB.prepare(
-      'SELECT archive_key FROM imap_messages WHERE account_id = ? AND archive_key IS NOT NULL',
+      'SELECT archive_key, archive_driver FROM imap_messages WHERE account_id = ? AND archive_key IS NOT NULL',
     )
       .bind(account.id)
-      .all<{ archive_key: string }>()
+      .all<{ archive_key: string | null; archive_driver: string | null }>()
     for (const row of archived.results) {
-      add(account.imap_archive_driver, row.archive_key)
+      // Rows archived before the driver was recorded fall back to the account's
+      // current archive backend.
+      add(archives, row.archive_driver ?? account.imap_archive_driver, row.archive_key)
     }
   } catch {
     return
   }
-  if (byDriver.size === 0) {
-    return
-  }
 
-  for (const [driver, keys] of byDriver) {
+  for (const [driver, keys] of copies) {
     let storage
     try {
       storage = storageForDriver(env, account, driver)
     } catch {
       continue
     }
-    if (!storage) {
-      continue
+    if (storage) {
+      await removeKeys(storage, keys)
     }
-    const list = [...keys]
-    for (let index = 0; index < list.length; index += 20) {
-      await Promise.allSettled(list.slice(index, index + 20).map((key) => storage.remove(key)))
+  }
+  for (const [driver, keys] of archives) {
+    const storage = archiveStorageForDriver(env, account, driver)
+    if (storage) {
+      await removeKeys(storage, keys)
     }
+  }
+}
+
+async function removeKeys(storage: StorageAdapter, keys: Set<string>): Promise<void> {
+  const list = [...keys]
+  for (let index = 0; index < list.length; index += 20) {
+    await Promise.allSettled(list.slice(index, index + 20).map((key) => storage.remove(key)))
   }
 }

@@ -3,8 +3,10 @@ import type { AccountRow } from '../functions/_lib/db'
 import { idExclusionClause } from '../functions/_lib/db'
 import type { Env } from '../functions/_lib/env'
 import {
+  archiveStorageCandidates,
+  archiveStorageForDriver,
   copyObjectKey,
-  rescueStorage,
+  rescueCandidates,
   storageForDriver,
 } from '../functions/_lib/storage'
 
@@ -41,11 +43,41 @@ describe('storageForDriver', () => {
   })
 })
 
-describe('rescueStorage', () => {
-  it('prefers a connected Drive, then R2', () => {
-    expect(rescueStorage(env(true), row({ drive_refresh_token_enc: 'enc' }))?.driver).toBe('drive')
-    expect(rescueStorage(env(true), row())?.driver).toBe('r2')
-    expect(rescueStorage(env(false), row())).toBeNull()
+describe('rescueCandidates', () => {
+  it('offers every configured backend, Drive first, so a failure can fall through', () => {
+    expect(rescueCandidates(env(true), row({ drive_refresh_token_enc: 'enc' })).map((item) => item.driver))
+      .toEqual(['drive', 'r2'])
+    expect(rescueCandidates(env(true), row()).map((item) => item.driver)).toEqual(['r2'])
+    expect(rescueCandidates(env(false), row())).toEqual([])
+  })
+})
+
+describe('archive storage', () => {
+  it('builds the adapter of the requested driver only', () => {
+    expect(archiveStorageForDriver(env(true), row(), 'r2')?.driver).toBe('r2')
+    expect(archiveStorageForDriver(env(true), row({ drive_refresh_token_enc: 'enc' }), 'drive')?.driver).toBe('drive')
+    expect(archiveStorageForDriver(env(true), row(), 'drive')).toBeNull()
+    expect(archiveStorageForDriver(env(false), row(), 'r2')).toBeNull()
+  })
+
+  it('tries the recorded driver first, then the other one', () => {
+    const account = row({ imap_archive_driver: 'r2', drive_refresh_token_enc: 'enc' })
+    expect(archiveStorageCandidates(env(true), account, 'drive').map((item) => item.driver)).toEqual([
+      'drive',
+      'r2',
+    ])
+    expect(archiveStorageCandidates(env(true), account, 'r2').map((item) => item.driver)).toEqual([
+      'r2',
+      'drive',
+    ])
+  })
+
+  it('starts from the account setting when the row has no driver yet', () => {
+    const account = row({ imap_archive_driver: 'drive', drive_refresh_token_enc: 'enc' })
+    expect(archiveStorageCandidates(env(true), account, null).map((item) => item.driver)).toEqual([
+      'drive',
+      'r2',
+    ])
   })
 })
 

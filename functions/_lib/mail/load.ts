@@ -3,7 +3,7 @@ import { getCachedBody, putCachedBody } from '../body-cache'
 import { getAccountRow, type AccountRow, type MessageRow } from '../db'
 import type { Env } from '../env'
 import { isSchemaError } from '../schema'
-import { getImapArchiveStorage, storageForDriver } from '../storage'
+import { archiveStorageCandidates, storageForDriver } from '../storage'
 import { loadCopyBytes, parseImapPointer } from './relay-target'
 import { fetchMessage } from './imap'
 import { parseImapMessageId, parseRelayMessageId } from './ids'
@@ -52,34 +52,36 @@ export async function loadRaw(
         (await markMirrorRead(env, id))
       return { bytes: cached, account, folder: imapId.folder, source: 'cache', needsSeen }
     }
-    const archiveStorage = getImapArchiveStorage(env, account)
-    if (archiveStorage) {
-      try {
-        const mirror = await env.DB.prepare(
-          'SELECT archive_key FROM imap_messages WHERE id = ?',
-        )
-          .bind(id)
-          .first<{ archive_key: string | null }>()
-        if (mirror?.archive_key) {
+    try {
+      const mirror = await env.DB.prepare(
+        'SELECT archive_key, archive_driver FROM imap_messages WHERE id = ?',
+      )
+        .bind(id)
+        .first<{ archive_key: string | null; archive_driver: string | null }>()
+      if (mirror?.archive_key) {
+        // The account may have switched its archive backend since this body was
+        // written: ask the recorded driver first, then the other one.
+        for (const archiveStorage of archiveStorageCandidates(env, account, mirror.archive_driver)) {
           const object = await archiveStorage.get(mirror.archive_key)
-          if (object) {
-            const bytes = new Uint8Array(await new Response(object.body).arrayBuffer())
-            const needsSeen =
-              markRead &&
-              (imapId.folder === 'inbox' || imapId.folder === 'spam') &&
-              (await markMirrorRead(env, id))
-            await putCachedBody(
-              env,
-              { messageId: id, accountId: account.id, folder: imapId.folder, uid: imapId.uid },
-              bytes,
-            )
-            return { bytes, account, folder: imapId.folder, source: 'archive', needsSeen }
+          if (!object) {
+            continue
           }
+          const bytes = new Uint8Array(await new Response(object.body).arrayBuffer())
+          const needsSeen =
+            markRead &&
+            (imapId.folder === 'inbox' || imapId.folder === 'spam') &&
+            (await markMirrorRead(env, id))
+          await putCachedBody(
+            env,
+            { messageId: id, accountId: account.id, folder: imapId.folder, uid: imapId.uid },
+            bytes,
+          )
+          return { bytes, account, folder: imapId.folder, source: 'archive', needsSeen }
         }
-      } catch (error) {
-        if (!isSchemaError(error)) {
-          throw error
-        }
+      }
+    } catch (error) {
+      if (!isSchemaError(error)) {
+        throw error
       }
     }
     const bytes = await fetchMessage(env, account, imapId.folder, imapId.uid, markRead)

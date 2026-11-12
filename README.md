@@ -211,10 +211,11 @@ Relay credentials can also be entered per account in the UI and are encrypted at
 - Filters run when the inbox is loaded and when a sync ingests new inbox messages. Matching uses From/To/Subject/snippet, not the full message body.
 - Forwarding and provider deletion run from the cron worker, so they require the same setup as Web Push. They only act on new incoming messages detected after the initial sync.
 - No alias-based "send as" yet: the sender is the account address.
+- Switching the IMAP body archive between R2 and Drive keeps the previously archived messages readable: each row records the backend that wrote it (legacy rows fall back to trying both).
 - Send-only accounts that keep sent copies and drafts in an IMAP mailbox (`storage_driver = 'imap'`) depend on that account: while it is disconnected, new drafts fail until you reconnect it or switch the relay account back to Drive/R2. When the deployment has Drive or R2 available, a failed APPEND falls back to it so the message (attachments and `.eml` included) is not lost; without object storage only the body stays readable from D1. The draft is also a real message in that mailbox, but its mirrored copy is filtered out of the Drafts list and of draft searches, so it is listed once, under the relay account.
 - Single shared `APP_PASSWORD` (with optional TOTP); this is a personal / small-team tool, not a multi-tenant service.
 - Login rate limiting is per IP and best-effort, not a substitute for Cloudflare Access or a WAF.
-- Account deletion removes D1 rows and makes a best-effort cleanup of R2/Drive objects referenced in D1; it never deletes mail from the provider.
+- Account deletion removes D1 rows and makes a best-effort cleanup of R2/Drive objects referenced in D1 (grouped per driver, so objects written before a destination change are found); it never deletes mail from the provider. Deleting a mailbox that stores the sent copies of a send-only account needs a second confirmation, because those copies stay on the provider but their attachments and `.eml` stop being reachable from the app.
 - Provider error details are returned to the authenticated admin to help with IMAP/SMTP setup.
 - Workers Paid is recommended because IMAP/SMTP TLS handshakes could exceed the free plan CPU budget.
 - Google OAuth uses the restricted `https://mail.google.com/` scope. A public production app needs Google verification (CASA); personal/testing apps can use OAuth in Testing mode, where refresh tokens expire after 7 days. App passwords remain available as an alternative.

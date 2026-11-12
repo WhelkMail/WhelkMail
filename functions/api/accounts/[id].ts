@@ -214,6 +214,26 @@ export const onRequestDelete: PagesFunction<Env> = async (context) => {
   if (!row) {
     return fail('Account not found', 404, undefined, 'account_not_found')
   }
+  // Messages sent from a relay account may point at this mailbox: deleting it
+  // would leave their attachments and .eml unreachable, so ask for confirmation.
+  const force = new URL(context.request.url).searchParams.get('force') === '1'
+  if (!force) {
+    const dependents = await context.env.DB.prepare(
+      'SELECT email FROM accounts WHERE sent_copy_account_id = ? AND id <> ?',
+    )
+      .bind(id, id)
+      .all<{ email: string }>()
+      .catch(() => null)
+    const users = dependents?.results.map((item) => item.email) ?? []
+    if (users.length > 0) {
+      return fail(
+        `This account stores the sent copies of ${users.join(', ')}`,
+        409,
+        users.join(', '),
+        'account_used_as_copy_target',
+      )
+    }
+  }
   await purgeAccountStorage(context.env, row).catch(() => undefined)
   await context.env.DB.prepare('DELETE FROM imap_body_cache WHERE account_id = ?')
     .bind(id)

@@ -905,7 +905,20 @@ export default function App() {
     setSettingsBusyId(id)
     setSettingsError(null)
     try {
-      await api.deleteAccount(id)
+      try {
+        await api.deleteAccount(id)
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.code !== 'account_used_as_copy_target') {
+          throw error
+        }
+        // Sent copies of these accounts live in this mailbox: deleting it makes
+        // their attachments and .eml unreachable.
+        if (!window.confirm(t('settings.deleteCopiesTarget', { accounts: error.detail ?? '' }))) {
+          setSettingsBusyId(null)
+          return
+        }
+        await api.deleteAccount(id, true)
+      }
       setAccounts((current) => current.filter((item) => item.id !== id))
       if (selectedAccountId === id) {
         setSelectedAccountId('all')

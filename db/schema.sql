@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS imap_messages (
   has_attachments INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
   archive_key TEXT,
+  archive_driver TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
