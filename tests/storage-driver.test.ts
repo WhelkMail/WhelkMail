@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AccountRow } from '../functions/_lib/db'
 import { idExclusionClause } from '../functions/_lib/db'
+import { ARCHIVE_UPDATE_SQL } from '../functions/_lib/mail/archive-update'
 import type { Env } from '../functions/_lib/env'
 import {
   archiveStorageCandidates,
@@ -114,5 +115,16 @@ describe('idExclusionClause', () => {
   it('caps the list so the statement stays reasonable', () => {
     const ids = Array.from({ length: 620 }, (_, index) => `i_acct.ZHJhZnQ.${index + 1}`)
     expect(idExclusionClause('id', ids, 500).split(',').length).toBe(500)
+  })
+})
+
+describe('archive update statement', () => {
+  it('always records the backend next to the object key', () => {
+    // Both sync paths use this constant: forgetting archive_driver in one of them
+    // left rows that the archive cleanup could not attribute to a backend.
+    expect(ARCHIVE_UPDATE_SQL).toContain('archive_key = ?')
+    expect(ARCHIVE_UPDATE_SQL).toContain('archive_driver = ?')
+    expect(ARCHIVE_UPDATE_SQL.match(/\?/g)).toHaveLength(3)
+    expect(ARCHIVE_UPDATE_SQL).toContain('archived = 1')
   })
 })

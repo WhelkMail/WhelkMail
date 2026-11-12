@@ -134,9 +134,11 @@ export async function purgeAccountStorage(env: Env, account: AccountRow): Promis
       .bind(account.id)
       .all<{ archive_key: string | null; archive_driver: string | null }>()
     for (const row of archived.results) {
-      // Rows archived before the driver was recorded fall back to the account's
-      // current archive backend.
-      add(archives, row.archive_driver ?? account.imap_archive_driver, row.archive_key)
+      // Rows archived before the driver was recorded have no backend: try both so
+      // nothing survives the cleanup, whichever one wrote the object.
+      for (const driver of row.archive_driver ? [row.archive_driver] : ['drive', 'r2']) {
+        add(archives, driver, row.archive_key)
+      }
     }
   } catch {
     return

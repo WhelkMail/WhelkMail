@@ -11,6 +11,7 @@ import type { PageCursor } from '../../shared/paging'
 import type { ImapConnection, ImapHeader } from './imap/client'
 import { MISSING_FOLDER, withImap, resolveFolderName } from './mail/imap'
 import { applyAccountLabel, applyFilters } from './filters'
+import { ARCHIVE_UPDATE_SQL } from './mail/archive-update'
 import { archiveStorageCandidates, getImapArchiveStorage } from './storage'
 import { imapMessageId } from './mail/ids'
 import { bodyText, dateOf, parseFull, parseHeaders, toMailbox, toMailboxes } from './mail/parse'
@@ -808,10 +809,7 @@ async function runSyncChunkLocked(
             const key = `imap/${account.id}/${folder}/${details.uidValidity ?? 0}/${folder}-${item.header.uid}.eml`
             const stored = await archiveStorage.put(key, bytes, 'message/rfc822')
             updates.push(
-              env.DB.prepare('UPDATE imap_messages SET archived = 1, archive_key = ? WHERE id = ?').bind(
-                stored.key,
-                item.id,
-              ),
+              env.DB.prepare(ARCHIVE_UPDATE_SQL).bind(stored.key, archiveStorage.driver, item.id),
             )
           } catch {
             // Keep the message on the provider if the archive write fails.
@@ -849,9 +847,7 @@ async function runSyncChunkLocked(
           const key = `imap/${account.id}/${folder}/${details.uidValidity ?? 0}/${folder}-${item.uid}.eml`
           const stored = await archiveStorage.put(key, bytes, 'message/rfc822')
           updates.push(
-            env.DB.prepare(
-              'UPDATE imap_messages SET archived = 1, archive_key = ?, archive_driver = ? WHERE id = ?',
-            ).bind(stored.key, archiveStorage.driver, item.id),
+            env.DB.prepare(ARCHIVE_UPDATE_SQL).bind(stored.key, archiveStorage.driver, item.id),
           )
         } catch {
           // Retry on the next sync.
