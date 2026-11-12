@@ -23,6 +23,7 @@ import type {
   PushSubscriptionInput,
   RetentionSummary,
   SearchScope,
+  StorageCleanupEntry,
   SendPayload,
   StorageOptions,
   SyncOverview,
@@ -180,6 +181,12 @@ export const api = {
   },
   updateSettings(input: Partial<AppSettings>): Promise<AppSettings> {
     return request('/api/settings', { method: 'PATCH', body: JSON.stringify(input) })
+  },
+  storageCleanup(): Promise<{ entries: StorageCleanupEntry[] }> {
+    return request('/api/storage/cleanup')
+  },
+  clearStorageCleanup(): Promise<{ ok: boolean }> {
+    return request('/api/storage/cleanup', { method: 'DELETE' })
   },
   retention(): Promise<{ retention: RetentionSummary }> {
     return request('/api/retention')

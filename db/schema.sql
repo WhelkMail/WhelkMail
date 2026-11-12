@@ -236,6 +236,18 @@ CREATE TABLE IF NOT EXISTS deletion_log (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_deletion_log_unique ON deletion_log (message_id);
 CREATE INDEX IF NOT EXISTS idx_deletion_log_account ON deletion_log (account_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS storage_cleanup_log (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  account_email TEXT NOT NULL,
+  driver TEXT NOT NULL,
+  object_key TEXT NOT NULL,
+  error TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_storage_cleanup_created ON storage_cleanup_log (created_at DESC);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   token_hash TEXT NOT NULL UNIQUE,

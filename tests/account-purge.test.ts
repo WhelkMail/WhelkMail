@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { capFailures } from '../functions/_lib/storage/cleanup-log'
 import { planAccountPurge } from '../functions/_lib/storage/purge-plan'
 import { encodeImapPointer } from '../shared/relay-copy'
 
@@ -48,5 +49,30 @@ describe('planAccountPurge', () => {
     )
     expect(plan.copies.size).toBe(0)
     expect(plan.archives.size).toBe(0)
+  })
+})
+
+describe('capFailures', () => {
+  it('keeps one entry per object, most recent order preserved, capped', () => {
+    const failures = [
+      { driver: 'drive', key: 'sent/a.eml', error: 'boom' },
+      { driver: 'drive', key: 'sent/a.eml', error: 'boom again' },
+      { driver: 'r2', key: 'accounts/x/sent/b.eml', error: 'nope' },
+      { driver: 'drive', key: '', error: 'ignored' },
+    ]
+    expect(capFailures(failures)).toEqual([
+      { driver: 'drive', key: 'sent/a.eml', error: 'boom' },
+      { driver: 'r2', key: 'accounts/x/sent/b.eml', error: 'nope' },
+    ])
+  })
+
+  it('stops at the limit', () => {
+    const failures = Array.from({ length: 80 }, (_, index) => ({
+      driver: 'r2',
+      key: `accounts/x/sent/${index}.eml`,
+      error: 'e',
+    }))
+    expect(capFailures(failures, 50)).toHaveLength(50)
+    expect(capFailures([], 50)).toEqual([])
   })
 })

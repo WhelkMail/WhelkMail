@@ -123,6 +123,15 @@ export interface FilterInput {
 
 export type SignatureMode = 'shared' | 'per_account'
 
+export interface StorageCleanupEntry {
+  id: string
+  accountEmail: string
+  driver: string
+  key: string
+  error: string
+  createdAt: string
+}
+
 export interface RetentionSummary {
   days: number
   lastRunAt: string | null

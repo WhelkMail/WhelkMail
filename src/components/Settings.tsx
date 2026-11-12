@@ -29,6 +29,7 @@ import { DeletionPanel } from './DeletionPanel'
 import { FiltersSettings } from './FiltersSettings'
 import { PushSettings } from './PushSettings'
 import { RetentionSettings } from './RetentionSettings'
+import { StorageCleanupPanel } from './StorageCleanupPanel'
 import { SyncPanel } from './SyncPanel'
 import { TwoFactorSettings } from './TwoFactorSettings'
 
@@ -1121,6 +1122,8 @@ export function Settings({
                 <ConfigBadge ok={Boolean(health?.cronConfigured)} label={t('settings.cron')} />
               </div>
             </div>
+
+            <StorageCleanupPanel />
 
             <button
               type="button"

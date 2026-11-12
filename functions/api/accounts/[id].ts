@@ -3,6 +3,7 @@ import { accountUpdateSchema } from '../../../shared/schemas'
 import { encryptString } from '../../_lib/crypto'
 import { getAccountRow, publicAccount } from '../../_lib/db'
 import { purgeAccountStorage } from '../../_lib/deletion'
+import { recordCleanupFailures } from '../../_lib/storage/cleanup-log'
 import { backfillAccountLabel } from '../../_lib/filters'
 import type { Env } from '../../_lib/env'
 import { fail, json, readJson } from '../../_lib/http'
@@ -265,7 +266,12 @@ export const onRequestDelete: PagesFunction<Env> = async (context) => {
       )
     }
   }
-  await purgeAccountStorage(context.env, row).catch(() => undefined)
+  const purgeFailures = await purgeAccountStorage(context.env, row).catch(() => [])
+  if (purgeFailures.length > 0) {
+    await recordCleanupFailures(context.env, { id: row.id, email: row.email }, purgeFailures).catch(
+      () => undefined,
+    )
+  }
   await context.env.DB.prepare('DELETE FROM imap_body_cache WHERE account_id = ?')
     .bind(id)
     .run()

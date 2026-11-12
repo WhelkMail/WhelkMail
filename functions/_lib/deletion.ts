@@ -5,6 +5,7 @@ import { moveToTrash } from './mail/imap'
 import { parseImapMessageId } from './mail/ids'
 import { archiveStorageForDriver, storageForDriver, type StorageAdapter } from './storage'
 import { planAccountPurge } from './storage/purge-plan'
+import type { PurgeFailure } from './storage/cleanup-log'
 import type { ImapMessageRow } from './sync'
 
 interface DeletionLogRow {
@@ -96,7 +97,8 @@ export async function deleteArchivedMessage(
   }
 }
 
-export async function purgeAccountStorage(env: Env, account: AccountRow): Promise<void> {
+export async function purgeAccountStorage(env: Env, account: AccountRow): Promise<PurgeFailure[]> {
+  const failures: PurgeFailure[] = []
   let plan
   try {
     const messages = await env.DB.prepare(
@@ -114,7 +116,7 @@ export async function purgeAccountStorage(env: Env, account: AccountRow): Promis
       archived.results.map((row) => ({ driver: row.archive_driver, key: row.archive_key })),
     )
   } catch {
-    return
+    return failures
   }
 
   for (const [driver, keys] of plan.copies) {
@@ -125,20 +127,36 @@ export async function purgeAccountStorage(env: Env, account: AccountRow): Promis
       continue
     }
     if (storage) {
-      await removeKeys(storage, keys)
+      await removeKeys(storage, driver, keys, failures)
     }
   }
   for (const [driver, keys] of plan.archives) {
     const storage = archiveStorageForDriver(env, account, driver)
     if (storage) {
-      await removeKeys(storage, keys)
+      await removeKeys(storage, driver, keys, failures)
     }
   }
+  return failures
 }
 
-async function removeKeys(storage: StorageAdapter, keys: Set<string>): Promise<void> {
+async function removeKeys(
+  storage: StorageAdapter,
+  driver: string,
+  keys: Set<string>,
+  failures: PurgeFailure[],
+): Promise<void> {
   const list = [...keys]
   for (let index = 0; index < list.length; index += 20) {
-    await Promise.allSettled(list.slice(index, index + 20).map((key) => storage.remove(key)))
+    const chunk = list.slice(index, index + 20)
+    const results = await Promise.allSettled(chunk.map((key) => storage.remove(key)))
+    results.forEach((result, position) => {
+      if (result.status === 'rejected') {
+        failures.push({
+          driver,
+          key: chunk[position],
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        })
+      }
+    })
   }
 }
