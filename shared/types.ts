@@ -147,6 +147,8 @@ export interface ThreadListResult {
   syncing?: boolean
   /** Accounts whose mirror is stale: the client asks for a sync after painting. */
   staleAccounts?: string[]
+  /** Stale accounts that already hold a sync lock: nothing to ask for. */
+  activeAccounts?: string[]
   nextCursor: string | null
 }
 

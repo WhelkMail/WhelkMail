@@ -1,6 +1,7 @@
 import type { MailboxSyncState } from '../../shared/types'
 import type { AccountRow } from './db'
 import type { Env } from './env'
+import { isSchemaError } from './schema'
 import { markSyncError, runSyncChunk } from './sync'
 
 const SYNC_TTL_MS = 5 * 60_000
@@ -48,5 +49,27 @@ export async function runBackgroundSync(
     ).catch(() => undefined)
   } finally {
     syncInFlight.delete(key)
+  }
+}
+
+/**
+ * Locks currently held, as `<accountId>:<folder>`.
+ *
+ * `partial` means "there is more to fetch", not "something is fetching now": the
+ * client needs both facts to know whether it should ask for the next chunk.
+ */
+export async function listActiveSyncLocks(env: Env): Promise<Set<string>> {
+  try {
+    const rows = await env.DB.prepare(
+      'SELECT lock_key FROM imap_sync_locks WHERE expires_at > ?',
+    )
+      .bind(Date.now())
+      .all<{ lock_key: string }>()
+    return new Set(rows.results.map((row) => row.lock_key))
+  } catch (error) {
+    if (isSchemaError(error)) {
+      return new Set()
+    }
+    throw error
   }
 }

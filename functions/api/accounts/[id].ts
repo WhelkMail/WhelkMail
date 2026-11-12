@@ -280,7 +280,12 @@ export const onRequestDelete: PagesFunction<Env> = async (context) => {
   }
   if (purgeFailures.length > 0) {
     await recordCleanupFailures(context.env, { id: row.id, email: row.email }, purgeFailures).catch(
-      () => undefined,
+      (error) => {
+        // The ledger itself failed: at least leave a trace in the Worker logs.
+        console.error(
+          `[cleanup] could not log ${purgeFailures.length} leftover objects for ${row.email}: ${error instanceof Error ? error.message : error}`,
+        )
+      },
     )
   }
   await context.env.DB.prepare('DELETE FROM imap_body_cache WHERE account_id = ?')

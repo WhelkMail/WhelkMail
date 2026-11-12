@@ -10,7 +10,7 @@ import type { Env } from '../../_lib/env'
 import { fail, json } from '../../_lib/http'
 import { isSchemaError } from '../../_lib/schema'
 import { getSyncState, imapMessageSummary, type ImapMessageRow } from '../../_lib/sync'
-import { needsBackgroundSync } from '../../_lib/sync-trigger'
+import { listActiveSyncLocks, needsBackgroundSync } from '../../_lib/sync-trigger'
 import {
   clampPageSize,
   compareByDateDesc,
@@ -262,7 +262,9 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       try {
         let accountSyncing = false
         let accountStale = false
-        if (scope.kind === 'folder') {
+        // Relay accounts have no IMAP mirror: asking them to sync was useless and
+        // answered sync_unsupported.
+        if (scope.kind === 'folder' && account.kind === 'imap') {
           const state = await getSyncState(context.env, account.id, scope.folder)
           accountSyncing = state?.status === 'partial'
           accountStale = needsBackgroundSync(state)
@@ -298,6 +300,11 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const staleAccounts = scope.kind === 'folder'
     ? perAccount.filter((result) => result.stale).map((result) => result.account.id)
     : []
+  const locks = staleAccounts.length > 0 ? await listActiveSyncLocks(context.env) : new Set<string>()
+  const activeAccounts =
+    scope.kind === 'folder'
+      ? staleAccounts.filter((id) => locks.has(`${id}:${scope.folder}`))
+      : []
 
   for (const result of perAccount) {
     const account = result.account
@@ -375,5 +382,5 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   console.log(
     `[threads] accounts=${accounts.length} folder=${labelId ? 'label' : folder} rows=${threads.length} page=${page.length} ms=${Date.now() - startedAt}`,
   )
-  return json({ threads: page, errors, syncing, staleAccounts, nextCursor })
+  return json({ threads: page, errors, syncing, staleAccounts, activeAccounts, nextCursor })
 }

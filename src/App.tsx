@@ -24,6 +24,7 @@ import type {
 } from '../shared/types'
 import { useI18n } from './i18n'
 import { api, ApiError, type AccountError } from './lib/api'
+import { pickSyncRequests } from './lib/sync-queue'
 import { errorText } from './lib/errors'
 import { syncSignature } from './lib/sync-signature'
 import { mergePage } from '../shared/paging'
@@ -115,37 +116,6 @@ function routeUrl(route: MailRoute): string {
   return route.messageId ? `${base}/${encodeURIComponent(route.messageId)}${suffix}` : `${base}${suffix}`
 }
 
-/**
- * Sync requested by the browser, after the list is already on screen.
- *
- * Doing this on the server (waitUntil) put IMAP work on the same request that
- * had to answer with the list, which is what made the inbox appear to hang.
- */
-const recentSyncRequests = new Map<string, number>()
-
-function requestSyncAfterPaint(
-  accounts: string[] | undefined,
-  folder: Folder,
-  alreadySyncing: boolean | undefined,
-): void {
-  if (!accounts || accounts.length === 0) {
-    return
-  }
-  if (alreadySyncing) {
-    return
-  }
-  const now = Date.now()
-  for (const accountId of accounts.slice(0, 3)) {
-    const key = `${accountId}:${folder}`
-    const last = recentSyncRequests.get(key) ?? 0
-    if (now - last < 60_000) {
-      continue
-    }
-    recentSyncRequests.set(key, now)
-    void api.runSync(accountId, folder).catch(() => undefined)
-  }
-}
-
 export default function App() {
   const { t } = useI18n()
   const tRef = useRef(t)
@@ -225,6 +195,8 @@ export default function App() {
   const [composeSeed, setComposeSeed] = useState<ComposeSeed | null>(null)
   const [composeKey, setComposeKey] = useState(0)
   const [listLoaded, setListLoaded] = useState(false)
+  const [pendingSync, setPendingSync] = useState<{ stale: string[]; active: string[] } | null>(null)
+  const syncRequestsRef = useRef<Record<string, number>>({})
   const [syncingMessages, setSyncingMessages] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const syncSignatureRef = useRef('')
@@ -394,7 +366,10 @@ export default function App() {
         console.log(
           `[list] folder=${folder} account=${selectedAccountId} threads=${response.threads.length} syncing=${Boolean(response.syncing)} ms=${Math.round(performance.now() - requestStartedAt)}`,
         )
-        requestSyncAfterPaint(response.staleAccounts, folder, response.syncing)
+        setPendingSync({
+          stale: response.staleAccounts ?? [],
+          active: response.activeAccounts ?? [],
+        })
         return {
           messages: response.threads.map(threadSummary),
           nextCursor: response.nextCursor,
@@ -450,6 +425,33 @@ export default function App() {
       cancelled = true
     }
   }, [auth, selectedAccountId, folder, selectedLabelId, refreshKey, view])
+
+  // One chain of sync chunks per stale account: `partial` means there is more to
+  // fetch, so the list keeps asking until the folder reports done. The request
+  // starts here, after the list is on screen, never on the server.
+  useEffect(() => {
+    if (!pendingSync || !listLoaded || view !== 'mail') {
+      return
+    }
+    const requests = pickSyncRequests({
+      stale: pendingSync.stale,
+      active: pendingSync.active,
+      lastRequested: syncRequestsRef.current,
+      now: Date.now(),
+      limit: 3,
+      minAgeMs: 3000,
+    })
+    if (requests.length === 0) {
+      return
+    }
+    for (const accountId of requests) {
+      syncRequestsRef.current[accountId] = Date.now()
+      void api.runSync(accountId, folder).catch(() => undefined)
+    }
+    // The poll refreshes the list when the chunk finishes, which brings a new
+    // staleAccounts list and continues the chain.
+    setSyncingMessages(true)
+  }, [pendingSync, listLoaded, view, folder])
 
   useEffect(() => {
     if (!syncingMessages || auth !== 'ok') {
