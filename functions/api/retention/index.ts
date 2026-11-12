@@ -1,5 +1,5 @@
 import { retentionResetSchema } from '../../../shared/schemas'
-import type { RetentionSummary } from '../../../shared/types'
+import type { Folder, RetentionSummary } from '../../../shared/types'
 import { getAccountRow, listAccountRows } from '../../_lib/db'
 import type { Env } from '../../_lib/env'
 import { fail, json, readJson } from '../../_lib/http'
@@ -65,12 +65,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       accounts = (await listAccountRows(context.env)).filter((row) => row.kind === 'imap')
     }
 
+    // Resetting the cursor deletes every folder row, so each of them bootstraps
+    // again on its next sync. A single account can afford all four folders right
+    // away; asking for every account only starts the Inbox to stay inside the
+    // Worker's subrequest budget (the rest follow when opened or via auto sync).
+    const foldersToSync: Folder[] = requested ? ['inbox', 'sent', 'draft', 'spam'] : ['inbox']
     let folders = 0
     for (const account of accounts) {
       folders += await resetMirrorCursors(context.env, account.id)
-      await queueSync(context.env, account, 'inbox', (promise) => context.waitUntil(promise)).catch(
-        () => undefined,
-      )
+      for (const folder of foldersToSync) {
+        await queueSync(context.env, account, folder, (promise) => context.waitUntil(promise)).catch(
+          () => undefined,
+        )
+      }
     }
     return json({ ok: true, accounts: accounts.length, folders, retention: await summary(context.env) })
   } catch (error) {

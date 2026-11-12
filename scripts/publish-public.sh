@@ -30,7 +30,7 @@ git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository"
 # the .gitignore rules: the base file, its suffixed variants and the generic
 # env files; the *.example templates are meant to be published.
 denied=$(git ls-tree -r --name-only "$SOURCE" \
-  | grep -E '(^|/)(wrangler\.toml|\.dev\.vars(\.[A-Za-z0-9_-]+)?|\.env(\.[A-Za-z0-9_-]+)?)$' \
+  | grep -E '(^|/)(wrangler\.toml|\.dev\.vars(\.[A-Za-z0-9_-]+)*|\.env(\.[A-Za-z0-9_-]+)*)$' \
   | grep -v '\.example$' || true)
 if [ -n "$denied" ]; then
   die "these files describe a specific installation and must stay untracked in $SOURCE:

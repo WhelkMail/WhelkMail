@@ -1,4 +1,5 @@
 import type { Folder, MessageSummary } from '../../../shared/types'
+import { idExclusionClause } from '../../_lib/db'
 import {
   getAccountRow,
   listAccountRows,
@@ -105,10 +106,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   // list it once, under the relay account that owns it.
   const hiddenDraftIds =
     folder === null || folder === 'draft' ? await relayDraftMirrorIds(context.env) : []
-  const exclusion =
-    hiddenDraftIds.length > 0
-      ? ` AND id NOT IN (${hiddenDraftIds.map(() => '?').join(', ')})`
-      : ''
+  const exclusion = idExclusionClause('id', hiddenDraftIds)
 
   if (accountIds.length > 0) {
     const placeholders = accountIds.map(() => '?').join(', ')
@@ -117,7 +115,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     if (folder) {
       imapParams.push(folder)
     }
-    imapParams.push(...hiddenDraftIds)
     imapParams.push(...pageParams(before), limit)
     try {
       const rows = await context.env.DB.prepare(
@@ -140,7 +137,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       if (folder) {
         legacyParams.push(folder)
       }
-      legacyParams.push(...hiddenDraftIds)
       legacyParams.push(...pageParams(before), limit)
       const rows = await context.env.DB.prepare(
         `SELECT * FROM imap_messages WHERE (lower(subject) LIKE ? OR lower(snippet) LIKE ? OR lower(from_email) LIKE ? OR lower(ifnull(from_name, '')) LIKE ? OR lower(to_json) LIKE ? OR lower(cc_json) LIKE ?) AND account_id IN (${placeholders})${folderClause}${exclusion}${pageClause(before)} ORDER BY sent_at DESC, id DESC LIMIT ?`,

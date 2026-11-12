@@ -8,7 +8,7 @@ import { deleteDraftById } from '../../_lib/mail/drafts'
 import { saveDraft } from '../../_lib/mail/imap'
 import { imapMessageId, parseRelayMessageId } from '../../_lib/mail/ids'
 import { buildMime, snippetOf } from '../../_lib/mime'
-import { getStorage } from '../../_lib/storage'
+import { copyObjectKey, getStorage, rescueStorage } from '../../_lib/storage'
 import { removeStoredCopy, resolveCopyTarget, storeCopyInMailbox } from '../../_lib/mail/relay-target'
 import { queueSync } from '../../_lib/sync'
 
@@ -127,25 +127,39 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     )
   }
   let storageKey = ''
+  let storageDriver: 'drive' | 'r2' | 'imap' = account.storage_driver === 'r2' ? 'r2' : 'drive'
   if (copyTarget) {
+    storageDriver = 'imap'
     try {
       storageKey = await storeCopyInMailbox(context.env, copyTarget, mime, 'draft')
-      await queueSync(context.env, copyTarget, 'draft', (promise) => context.waitUntil(promise)).catch(
-        () => undefined,
-      )
     } catch (error) {
-      return fail(
-        'Saving the draft failed',
-        502,
-        error instanceof Error ? error.message : 'IMAP error',
-        'draft_save_failed',
-      )
+      // Losing the draft because the mailbox rejected the APPEND would throw away
+      // what the user typed: fall back to object storage when the deployment has
+      // any, and record that driver on the row.
+      const rescue = rescueStorage(context.env, account)
+      let saved = false
+      if (rescue) {
+        try {
+          const key = copyObjectKey(rescue.driver, account.id, 'draft', relayId)
+          const stored = await rescue.storage.put(key, mime, 'message/rfc822')
+          storageKey = stored.key
+          storageDriver = rescue.driver
+          saved = true
+        } catch {
+          saved = false
+        }
+      }
+      if (!saved) {
+        return fail(
+          'Saving the draft failed',
+          502,
+          error instanceof Error ? error.message : 'IMAP error',
+          'draft_save_failed',
+        )
+      }
     }
   } else {
-    const objectKey =
-      account.storage_driver === 'r2'
-        ? `accounts/${account.id}/drafts/${relayId}.eml`
-        : `drafts/${relayId}.eml`
+    const objectKey = copyObjectKey(storageDriver, account.id, 'draft', relayId)
     try {
       const storage = await getStorage(context.env, account)
       const stored = await storage.put(objectKey, mime, 'message/rfc822')
@@ -186,7 +200,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         input.html ?? null,
         nowIso,
         mime.byteLength,
-        account.storage_driver,
+        storageDriver,
         storageKey,
         JSON.stringify(attachmentMeta),
         'draft',
@@ -214,13 +228,22 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         input.html ?? null,
         nowIso,
         mime.byteLength,
-        account.storage_driver,
+        storageDriver,
         storageKey,
         JSON.stringify(attachmentMeta),
         'draft',
         nowIso,
       )
       .run()
+  }
+
+  // The mirror of the destination folder is refreshed only now: the new copy has
+  // been appended, the previous one expunged and the D1 row written, so the sync
+  // sees the final state instead of a half-applied save.
+  if (copyTarget) {
+    await queueSync(context.env, copyTarget, 'draft', (promise) => context.waitUntil(promise)).catch(
+      () => undefined,
+    )
   }
 
   return json({ ok: true, draftId: `r_${relayId}` })

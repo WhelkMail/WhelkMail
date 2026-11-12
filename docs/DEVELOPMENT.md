@@ -101,8 +101,8 @@ SOURCE=feature-x sh scripts/publish-public.sh      # publish another branch
 
 The script refuses to run if a personal config file is tracked in `SOURCE`:
 `wrangler.toml`, `worker/wrangler.toml`, `.dev.vars` and its variants
-(`.dev.vars.production`, …), `.env` and `.env.*`. The `*.example` templates are
-allowed and expected. It then builds a snapshot commit whose parent is
+(`.dev.vars.production`, `.dev.vars.production.local`, …), `.env` and `.env.*`
+with any number of suffixes. The `*.example` templates are allowed and expected. It then builds a snapshot commit whose parent is
 `public/main` (so the public history stays linear and pushes are fast-forwards)
 and pushes the tree of `SOURCE`.
 

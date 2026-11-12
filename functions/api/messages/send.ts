@@ -17,7 +17,7 @@ import { sendWithAccount } from '../../_lib/mail/smtp'
 import { queueSync } from '../../_lib/sync'
 import { buildMime, snippetOf } from '../../_lib/mime'
 import { getRelay, type RelayAdapter } from '../../_lib/relay'
-import { getStorage } from '../../_lib/storage'
+import { copyObjectKey, getStorage, rescueStorage } from '../../_lib/storage'
 
 interface PersistInput {
   env: Env
@@ -34,6 +34,8 @@ interface PersistInput {
   sentAt: string
   size: number
   storageKey: string
+  /** Driver that actually holds this copy (the rescue one after a failed APPEND). */
+  storageDriver?: 'drive' | 'r2' | 'imap'
   attachments: AttachmentMeta[]
   status: 'sent' | 'failed'
 }
@@ -59,7 +61,7 @@ async function persistRelayMessage(input: PersistInput): Promise<MessageRow> {
       input.bodyHtml,
       input.sentAt,
       input.size,
-      input.account.storage_driver,
+      input.storageDriver ?? input.account.storage_driver,
       input.storageKey,
       JSON.stringify(input.attachments),
       input.status,
@@ -258,11 +260,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     date: now,
   })
   let storageKey = ''
-  if (!copyTarget) {
-    const objectKey =
-      account.storage_driver === 'r2'
-        ? `accounts/${account.id}/sent/${id}.eml`
-        : `sent/${id}.eml`
+  let storageDriver: 'drive' | 'r2' | 'imap' = account.storage_driver === 'r2' ? 'r2' : 'drive'
+  if (copyTarget) {
+    storageDriver = 'imap'
+  } else {
+    const objectKey = copyObjectKey(storageDriver, account.id, 'sent', id)
     try {
       const storage = await getStorage(context.env, account)
       const stored = await storage.put(objectKey, mime, 'message/rfc822')
@@ -297,9 +299,25 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           () => undefined,
         )
       } catch (error) {
-        warning = `Messaggio inviato, ma la copia in ${copyTarget.sent_folder || 'Sent'} di ${
-          copyTarget.email
-        } non è stata salvata: ${error instanceof Error ? error.message : 'errore IMAP'}`
+        const detail = error instanceof Error ? error.message : 'errore IMAP'
+        // The message already left: keep the MIME somewhere instead of losing
+        // attachments and the raw view.
+        const rescue = rescueStorage(context.env, account)
+        let rescued = false
+        if (rescue) {
+          try {
+            const key = copyObjectKey(rescue.driver, account.id, 'sent', id)
+            const stored = await rescue.storage.put(key, mime, 'message/rfc822')
+            storageKey = stored.key
+            storageDriver = rescue.driver
+            rescued = true
+          } catch {
+            rescued = false
+          }
+        }
+        warning = rescued
+          ? `Messaggio inviato, ma la copia in ${copyTarget.sent_folder || 'Sent'} di ${copyTarget.email} non è stata salvata (${detail}). Il messaggio è stato archiviato su ${rescue?.driver === 'r2' ? 'R2' : 'Google Drive'}.`
+          : `Messaggio inviato, ma la copia in ${copyTarget.sent_folder || 'Sent'} di ${copyTarget.email} non è stata salvata: ${detail}`
       }
     }
     const row = await persistRelayMessage({
@@ -317,6 +335,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       sentAt: now.toISOString(),
       size: mime.byteLength,
       storageKey,
+      storageDriver,
       attachments: attachmentMeta,
       status: 'sent',
     })
@@ -343,6 +362,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       sentAt: now.toISOString(),
       size: mime.byteLength,
       storageKey,
+      storageDriver,
       attachments: attachmentMeta,
       status: 'failed',
     })

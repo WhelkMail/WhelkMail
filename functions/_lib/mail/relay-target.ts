@@ -9,7 +9,7 @@ import {
 import { deleteMessageAt, fetchMessageAt, saveDraft, appendToSent } from './imap'
 import { draftMirrorIdsFromPointers } from './ids'
 import { isSchemaError } from '../schema'
-import { getStorage } from '../storage'
+import { storageForDriver } from '../storage'
 
 /**
  * Some deployments prefer a real mailbox over Drive/R2 for send-only accounts.
@@ -56,7 +56,7 @@ export async function storeCopyInMailbox(
  * (\`i_<account>.draft.<uid>\`), while the app lists the relay row. Passing these
  * ids to the Drafts query keeps the same draft from appearing twice.
  */
-export async function relayDraftMirrorIds(env: Env, limit = 200): Promise<string[]> {
+export async function relayDraftMirrorIds(env: Env, limit = 500): Promise<string[]> {
   let rows: { storage_key: string }[]
   try {
     const result = await env.DB.prepare(
@@ -113,9 +113,9 @@ export async function removeStoredCopy(
     await deleteCopy(env, pointer)
     return
   }
-  if (storageDriver === 'imap') {
+  const storage = storageForDriver(env, account, storageDriver)
+  if (!storage) {
     return
   }
-  const storage = await getStorage(env, account)
   await storage.remove(storageKey)
 }

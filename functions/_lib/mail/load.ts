@@ -3,7 +3,7 @@ import { getCachedBody, putCachedBody } from '../body-cache'
 import { getAccountRow, type AccountRow, type MessageRow } from '../db'
 import type { Env } from '../env'
 import { isSchemaError } from '../schema'
-import { getImapArchiveStorage, getStorage } from '../storage'
+import { getImapArchiveStorage, storageForDriver } from '../storage'
 import { loadCopyBytes, parseImapPointer } from './relay-target'
 import { fetchMessage } from './imap'
 import { parseImapMessageId, parseRelayMessageId } from './ids'
@@ -116,10 +116,12 @@ export async function loadRaw(
     }
     return { bytes, account, folder: row.folder as Folder, source: 'storage', needsSeen: false }
   }
-  if (account.storage_driver === 'imap') {
+  // An account can switch destination; the object still lives wherever this
+  // row was written, so read it with the driver stored next to the key.
+  const storage = storageForDriver(env, account, row.storage_driver)
+  if (!storage) {
     return null
   }
-  const storage = await getStorage(env, account)
   const object = await storage.get(row.storage_key)
   if (!object) {
     return null
