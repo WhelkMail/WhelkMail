@@ -837,7 +837,7 @@ export async function runSyncChunk(
   env: Env,
   account: AccountRow,
   folder: Folder,
-): Promise<{ folders: MailboxSyncState[]; hasMore: boolean; locked?: boolean }> {
+): Promise<{ folders: MailboxSyncState[]; hasMore: boolean; locked?: boolean; progress?: number }> {
   const lock = await acquireSyncLock(env, account.id, folder)
   if (!lock) {
     console.log(`[sync] ${account.id}/${folder} skipped (lock held by another worker)`)
@@ -863,7 +863,7 @@ async function runSyncChunkLocked(
   account: AccountRow,
   folder: Folder,
   lock: SyncLock,
-): Promise<{ folders: MailboxSyncState[]; hasMore: boolean }> {
+): Promise<{ folders: MailboxSyncState[]; hasMore: boolean; progress?: number }> {
   const row = await env.DB.prepare(
     'SELECT * FROM imap_sync WHERE account_id = ? AND folder = ?',
   )
@@ -1252,5 +1252,26 @@ async function runSyncChunkLocked(
   return {
     folders,
     hasMore: current ? current.status === 'partial' : false,
+    // Work actually done: mirrored rows plus archived bodies. Archiving runs in
+    // its own chunks and does not add rows to D1, so `synced` alone would look
+    // frozen while the storage is working fine.
+    progress: (current?.synced ?? 0) + (await countArchived(env, account.id, folder)),
+  }
+}
+
+/** Bodies already copied to R2/Drive for this folder. */
+async function countArchived(env: Env, accountId: string, folder: Folder): Promise<number> {
+  try {
+    const row = await env.DB.prepare(
+      'SELECT COUNT(*) AS count FROM imap_messages WHERE account_id = ? AND folder = ? AND archived = 1',
+    )
+      .bind(accountId, folder)
+      .first<{ count: number }>()
+    return row?.count ?? 0
+  } catch (error) {
+    if (isSchemaError(error)) {
+      return 0
+    }
+    throw error
   }
 }

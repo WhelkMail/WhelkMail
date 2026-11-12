@@ -142,7 +142,13 @@ export const api = {
   runSync(
     id: string,
     folder: string,
-  ): Promise<{ folders: MailboxSyncState[]; hasMore: boolean; locked?: boolean; error?: string }> {
+  ): Promise<{
+    folders: MailboxSyncState[]
+    hasMore: boolean
+    locked?: boolean
+    progress?: number
+    error?: string
+  }> {
     return request(`/api/accounts/${id}/sync`, {
       method: 'POST',
       body: JSON.stringify({ folder }),

@@ -453,9 +453,11 @@ export default function App() {
           hasMore: response.hasMore,
           locked: response.locked,
           error: response.error,
-          // Same folder count as before means the chunk did not advance: a
-          // failing archive write, for instance, would otherwise loop forever.
-          progress: response.folders.find((item) => item.folder === target)?.synced,
+          // The chunk reports the work it actually did (rows plus archived
+          // bodies): a failing archive write keeps it flat, a healthy one makes
+          // it grow even when no new row reaches D1.
+          progress:
+            response.progress ?? response.folders.find((item) => item.folder === target)?.synced,
         })),
       { max: 30, delayMs: 250, stallLimit: 3 },
     )

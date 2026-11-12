@@ -72,6 +72,18 @@ describe('stall detection', () => {
     expect(run.mock.calls.length).toBe(4)
   })
 
+  it('does not stall while the archive advances without new rows', async () => {
+    // Archiving: D1 row count is flat, the archived bodies grow.
+    let synced = 0
+    let archived = 0
+    const run = vi.fn(async () => {
+      archived += 8
+      return { hasMore: archived < 40, progress: synced + archived }
+    })
+    const result = await runSyncChain(run, { wait: noWait, stallLimit: 3 })
+    expect(result).toEqual({ chunks: 5, done: true, locked: false })
+  })
+
   it('keeps going while the synced count grows', async () => {
     let synced = 0
     const run = vi.fn(async () => {
