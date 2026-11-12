@@ -60,3 +60,23 @@ export async function runSyncChain(
   }
   return { chunks, done: false, locked }
 }
+
+/**
+ * What a finished chain should do next.
+ *
+ * Reaching the cap or meeting a lock is not a failure: the folder is still
+ * partial and nobody will come back to it on its own, so another chain is
+ * scheduled after a short pause. Returns `null` when there is nothing to resume.
+ */
+export function nextChainDelay(
+  result: SyncChainResult,
+  options: { resumeMs?: number; lockedMs?: number } = {},
+): number | null {
+  if (result.done || result.error) {
+    return null
+  }
+  if (result.locked) {
+    return options.lockedMs ?? 5000
+  }
+  return options.resumeMs ?? 500
+}

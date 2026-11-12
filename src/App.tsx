@@ -24,7 +24,7 @@ import type {
 } from '../shared/types'
 import { useI18n } from './i18n'
 import { api, ApiError, type AccountError } from './lib/api'
-import { runSyncChain } from './lib/sync-chain'
+import { nextChainDelay, runSyncChain } from './lib/sync-chain'
 import { pickSyncRequests } from './lib/sync-queue'
 import { errorText } from './lib/errors'
 import { syncSignature } from './lib/sync-signature'
@@ -198,6 +198,8 @@ export default function App() {
   const [listLoaded, setListLoaded] = useState(false)
   const [pendingSync, setPendingSync] = useState<{ stale: string[]; active: string[] } | null>(null)
   const syncRequestsRef = useRef<Record<string, number>>({})
+  /** Folders whose chain is running, so one folder never runs two chains. */
+  const syncChainsRef = useRef<Set<string>>(new Set())
   const [syncingMessages, setSyncingMessages] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const syncSignatureRef = useRef('')
@@ -431,6 +433,35 @@ export default function App() {
   // One chain of sync chunks per stale account: `partial` means there is more to
   // fetch, so the list keeps asking until the folder reports done. The request
   // starts here, after the list is on screen, never on the server.
+  /**
+   * Run one folder's sync to the end.
+   *
+   * A chain stops at the cap (or on a lock) with the folder still partial: nobody
+   * would come back to it, so another chain is scheduled after a pause. The set
+   * keeps one chain per folder, whichever path started it.
+   */
+  function startSyncChain(accountId: string, target: Folder): void {
+    const key = `${accountId}:${target}`
+    if (syncChainsRef.current.has(key)) {
+      return
+    }
+    syncChainsRef.current.add(key)
+    const finish = () => syncChainsRef.current.delete(key)
+    void runSyncChain(() => api.runSync(accountId, target), { max: 30, delayMs: 250 })
+      .then((result) => {
+        const delay = nextChainDelay(result)
+        if (delay === null) {
+          finish()
+          return
+        }
+        window.setTimeout(() => {
+          syncChainsRef.current.delete(key)
+          startSyncChain(accountId, target)
+        }, delay)
+      })
+      .catch(() => finish())
+  }
+
   useEffect(() => {
     if (!pendingSync || !listLoaded || view !== 'mail') {
       return
@@ -449,11 +480,9 @@ export default function App() {
     for (const key of requests) {
       syncRequestsRef.current[key] = Date.now()
       const accountId = key.slice(0, key.lastIndexOf(':'))
-      // The chain follows hasMore by itself: it does not depend on the list being
-      // reloaded or on the stale TTL to fetch the next chunk.
-      void runSyncChain(() => api.runSync(accountId, folder), { max: 30, delayMs: 250 }).catch(
-        () => undefined,
-      )
+      // The chain follows hasMore by itself and resumes after the cap: it does not
+      // depend on the list being reloaded or on the stale TTL.
+      startSyncChain(accountId, folder)
     }
     // The poll refreshes the list while chunks land and once they are done.
     setSyncingMessages(true)

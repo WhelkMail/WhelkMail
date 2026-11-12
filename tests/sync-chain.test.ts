@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runSyncChain } from '../src/lib/sync-chain'
+import { nextChainDelay, runSyncChain } from '../src/lib/sync-chain'
 
 const noWait = async (): Promise<void> => undefined
 
@@ -40,5 +40,23 @@ describe('runSyncChain', () => {
       delayMs: 123,
     })
     expect(wait).toHaveBeenCalledWith(123)
+  })
+})
+
+describe('nextChainDelay', () => {
+  it('resumes after a cap, so a big mailbox keeps going', () => {
+    expect(nextChainDelay({ chunks: 30, done: false, locked: false })).toBe(500)
+    expect(nextChainDelay({ chunks: 30, done: false, locked: false }, { resumeMs: 1000 })).toBe(
+      1000,
+    )
+  })
+
+  it('backs off when another worker holds the lock', () => {
+    expect(nextChainDelay({ chunks: 1, done: false, locked: true })).toBe(5000)
+  })
+
+  it('stops when the folder is done or failed', () => {
+    expect(nextChainDelay({ chunks: 4, done: true, locked: false })).toBeNull()
+    expect(nextChainDelay({ chunks: 1, done: false, locked: false, error: 'boom' })).toBeNull()
   })
 })
