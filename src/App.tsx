@@ -447,8 +447,23 @@ export default function App() {
     }
     syncChainsRef.current.add(key)
     const finish = () => syncChainsRef.current.delete(key)
-    void runSyncChain(() => api.runSync(accountId, target), { max: 30, delayMs: 250 })
+    void runSyncChain(
+      () =>
+        api.runSync(accountId, target).then((response) => ({
+          hasMore: response.hasMore,
+          locked: response.locked,
+          error: response.error,
+          // Same folder count as before means the chunk did not advance: a
+          // failing archive write, for instance, would otherwise loop forever.
+          progress: response.folders.find((item) => item.folder === target)?.synced,
+        })),
+      { max: 30, delayMs: 250, stallLimit: 3 },
+    )
       .then((result) => {
+        if (result.stalled) {
+          // Tell the user instead of silently retrying forever.
+          setNotice(tRef.current('app.syncStalled'))
+        }
         const delay = nextChainDelay(result)
         if (delay === null) {
           finish()

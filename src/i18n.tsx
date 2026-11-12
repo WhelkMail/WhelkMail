@@ -538,6 +538,8 @@ const en: Record<string, string> = {
   'app.microsoftConnected': 'Microsoft account connected',
   'app.googleConnected': 'Google account connected',
   'app.connectFailed': 'Connection failed: {reason}',
+  'app.syncStalled':
+    'Sync is not making progress: check the account in Settings (archiving or storage may be failing).',
   'app.emailSent': 'Email sent',
   'app.emailSentInFolder': 'Email sent — copy saved in {folder}',
   'app.accountCreated': 'Account created',
@@ -1137,6 +1139,8 @@ const it: Record<string, string> = {
   'app.googleConnected': 'Account Google collegato',
   'app.connectFailed': 'Collegamento non riuscito: {reason}',
   'app.emailSent': 'Email inviata',
+  'app.syncStalled':
+    'La sincronizzazione non sta avanzando: controlla l’account nelle impostazioni (archiviazione o storage potrebbero fallire).',
   'app.emailSentInFolder': 'Email inviata — copia salvata in {folder}',
   'app.accountCreated': 'Account creato',
   'app.accountCreatedTest': 'Account creato: verifica la connessione dalle impostazioni',

@@ -11,6 +11,11 @@ export interface SyncChunkResult {
   hasMore: boolean
   locked?: boolean
   error?: string
+  /**
+   * How much has been synced so far (for example the folder's `synced` count).
+   * A chunk that leaves it unchanged made no progress.
+   */
+  progress?: number
 }
 
 export interface SyncChainOptions {
@@ -20,12 +25,21 @@ export interface SyncChainOptions {
   delayMs?: number
   /** Injectable for tests. */
   wait?: (ms: number) => Promise<void>
+  /**
+   * How many chunks in a row may make no progress before the chain gives up
+   * (the first chunk only sets the baseline). Without it a folder that keeps
+   * reporting `hasMore` — an archive write that always fails, say — would
+   * restart the chain forever.
+   */
+  stallLimit?: number
 }
 
 export interface SyncChainResult {
   chunks: number
   done: boolean
   locked: boolean
+  /** The folder stopped advancing: worth telling the user. */
+  stalled?: boolean
   error?: string
 }
 
@@ -38,8 +52,11 @@ export async function runSyncChain(
   const max = options.max ?? 40
   const delayMs = options.delayMs ?? 200
   const wait = options.wait ?? sleep
+  const stallLimit = options.stallLimit ?? 3
   let chunks = 0
   let locked = false
+  let lastProgress: number | null = null
+  let stalledChunks = 0
 
   while (chunks < max) {
     const result = await run()
@@ -53,6 +70,17 @@ export async function runSyncChain(
     }
     if (!result.hasMore) {
       return { chunks, done: true, locked: false }
+    }
+    if (typeof result.progress === 'number') {
+      if (lastProgress !== null && result.progress <= lastProgress) {
+        stalledChunks += 1
+        if (stalledChunks >= stallLimit) {
+          return { chunks, done: false, locked: false, stalled: true }
+        }
+      } else {
+        stalledChunks = 0
+      }
+      lastProgress = Math.max(lastProgress ?? result.progress, result.progress)
     }
     if (chunks < max) {
       await wait(delayMs)
@@ -72,7 +100,7 @@ export function nextChainDelay(
   result: SyncChainResult,
   options: { resumeMs?: number; lockedMs?: number } = {},
 ): number | null {
-  if (result.done || result.error) {
+  if (result.done || result.error || result.stalled) {
     return null
   }
   if (result.locked) {

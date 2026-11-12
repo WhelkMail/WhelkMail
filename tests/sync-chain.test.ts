@@ -60,3 +60,31 @@ describe('nextChainDelay', () => {
     expect(nextChainDelay({ chunks: 1, done: false, locked: false, error: 'boom' })).toBeNull()
   })
 })
+
+describe('stall detection', () => {
+  it('stops when the folder keeps reporting work but does not advance', async () => {
+    // The archive write keeps failing: same synced count, hasMore forever.
+    const run = vi.fn(async () => ({ hasMore: true, progress: 40 }))
+    const result = await runSyncChain(run, { wait: noWait, stallLimit: 3 })
+    expect(result).toMatchObject({ done: false, stalled: true })
+    // The first chunk sets the baseline, then three chunks in a row without
+    // progress stop the chain.
+    expect(run.mock.calls.length).toBe(4)
+  })
+
+  it('keeps going while the synced count grows', async () => {
+    let synced = 0
+    const run = vi.fn(async () => {
+      synced += 40
+      return { hasMore: synced < 200, progress: synced }
+    })
+    const result = await runSyncChain(run, { wait: noWait, stallLimit: 3 })
+    expect(result).toEqual({ chunks: 5, done: true, locked: false })
+  })
+
+  it('does not reschedule a stalled chain', () => {
+    expect(
+      nextChainDelay({ chunks: 3, done: false, locked: false, stalled: true }),
+    ).toBeNull()
+  })
+})
