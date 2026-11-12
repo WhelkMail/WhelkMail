@@ -3,8 +3,8 @@ import type { AccountRow } from './db'
 import type { Env } from './env'
 import { moveToTrash } from './mail/imap'
 import { parseImapMessageId } from './mail/ids'
-import { parseImapPointer } from './mail/relay-target'
 import { archiveStorageForDriver, storageForDriver, type StorageAdapter } from './storage'
+import { planAccountPurge } from './storage/purge-plan'
 import type { ImapMessageRow } from './sync'
 
 interface DeletionLogRow {
@@ -97,54 +97,27 @@ export async function deleteArchivedMessage(
 }
 
 export async function purgeAccountStorage(env: Env, account: AccountRow): Promise<void> {
-  // Objects are grouped by the driver that wrote them: an account can switch
-  // destination (Drive → R2 → mailbox) or archive backend, and what was written
-  // earlier stays where it was.
-  const copies = new Map<string, Set<string>>()
-  const archives = new Map<string, Set<string>>()
-  const add = (
-    bucket: Map<string, Set<string>>,
-    driver: string | null | undefined,
-    key: string | null | undefined,
-  ): void => {
-    if (!driver || !key) {
-      return
-    }
-    const keys = bucket.get(driver) ?? new Set<string>()
-    keys.add(key)
-    bucket.set(driver, keys)
-  }
-
+  let plan
   try {
     const messages = await env.DB.prepare(
       'SELECT storage_driver, storage_key FROM messages WHERE account_id = ?',
     )
       .bind(account.id)
       .all<{ storage_driver: string; storage_key: string }>()
-    for (const row of messages.results) {
-      // Pointers refer to mail kept in an IMAP mailbox: account deletion must
-      // never remove messages from the provider.
-      if (row.storage_key && !parseImapPointer(row.storage_key)) {
-        add(copies, row.storage_driver, row.storage_key)
-      }
-    }
     const archived = await env.DB.prepare(
       'SELECT archive_key, archive_driver FROM imap_messages WHERE account_id = ? AND archive_key IS NOT NULL',
     )
       .bind(account.id)
       .all<{ archive_key: string | null; archive_driver: string | null }>()
-    for (const row of archived.results) {
-      // Rows archived before the driver was recorded have no backend: try both so
-      // nothing survives the cleanup, whichever one wrote the object.
-      for (const driver of row.archive_driver ? [row.archive_driver] : ['drive', 'r2']) {
-        add(archives, driver, row.archive_key)
-      }
-    }
+    plan = planAccountPurge(
+      messages.results.map((row) => ({ driver: row.storage_driver, key: row.storage_key })),
+      archived.results.map((row) => ({ driver: row.archive_driver, key: row.archive_key })),
+    )
   } catch {
     return
   }
 
-  for (const [driver, keys] of copies) {
+  for (const [driver, keys] of plan.copies) {
     let storage
     try {
       storage = storageForDriver(env, account, driver)
@@ -155,7 +128,7 @@ export async function purgeAccountStorage(env: Env, account: AccountRow): Promis
       await removeKeys(storage, keys)
     }
   }
-  for (const [driver, keys] of archives) {
+  for (const [driver, keys] of plan.archives) {
     const storage = archiveStorageForDriver(env, account, driver)
     if (storage) {
       await removeKeys(storage, keys)

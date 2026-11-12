@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AccountRow } from '../functions/_lib/db'
 import { idExclusionClause } from '../functions/_lib/db'
-import { ARCHIVE_UPDATE_SQL } from '../functions/_lib/mail/archive-update'
+import { ARCHIVE_UPDATE_SQL, archiveUpdateStatement } from '../functions/_lib/mail/archive-update'
 import type { Env } from '../functions/_lib/env'
 import {
   archiveStorageCandidates,
@@ -119,6 +119,29 @@ describe('idExclusionClause', () => {
 })
 
 describe('archive update statement', () => {
+  it('binds the key, the driver and the id together', () => {
+    // Both sync paths call this builder, so the parameters cannot drift apart.
+    const calls: { sql: string; params: unknown[] }[] = []
+    const fakeEnv = {
+      DB: {
+        prepare(sql: string) {
+          return {
+            bind(...params: unknown[]) {
+              calls.push({ sql, params })
+              return { __statement: true }
+            },
+          }
+        },
+      },
+    } as unknown as Env
+
+    archiveUpdateStatement(fakeEnv, { id: 'i_a.df.e.1', key: 'imap/a/inbox/1.eml', driver: 'r2' })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].sql).toBe(ARCHIVE_UPDATE_SQL)
+    expect(calls[0].params).toEqual(['imap/a/inbox/1.eml', 'r2', 'i_a.df.e.1'])
+  })
+
   it('always records the backend next to the object key', () => {
     // Both sync paths use this constant: forgetting archive_driver in one of them
     // left rows that the archive cleanup could not attribute to a backend.
