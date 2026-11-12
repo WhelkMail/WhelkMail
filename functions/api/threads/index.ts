@@ -10,7 +10,6 @@ import type { Env } from '../../_lib/env'
 import { fail, json } from '../../_lib/http'
 import { isSchemaError } from '../../_lib/schema'
 import { getSyncState, imapMessageSummary, type ImapMessageRow } from '../../_lib/sync'
-import { needsBackgroundSync, runBackgroundSync } from '../../_lib/sync-trigger'
 import {
   clampPageSize,
   compareByDateDesc,
@@ -235,13 +234,11 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     accounts.map(async (account) => {
       try {
         if (scope.kind === 'folder') {
-          // Same refresh policy as the flat list: the response never waits for
-          // IMAP, the sync runs in the background and the client polls for it.
+          // Only report: this path never opens an IMAP connection, so opening a
+          // folder cannot hang behind a sync. Fetching is left to auto-sync and
+          // to the cron worker.
           const state = await getSyncState(context.env, account.id, scope.folder)
-          if (needsBackgroundSync(state) || state?.status === 'partial') {
-            syncing = true
-            context.waitUntil(runBackgroundSync(context.env, account, scope.folder))
-          }
+          syncing = state?.status === 'partial'
         }
         const loaded = await accountThreads(context.env, account, scope, limit, before)
         return { account, loaded, error: null as string | null }

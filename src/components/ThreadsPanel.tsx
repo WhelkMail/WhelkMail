@@ -17,16 +17,9 @@ interface Pending {
  * listed one row per message. The sync fills it a few messages per run; this card
  * does it in bulk (headers only) for a mailbox with a long history.
  */
-interface InboxCheck {
-  conversations: number
-  messages: number
-  error: string | null
-}
-
 export function ThreadsPanel() {
   const { t } = useI18n()
   const [pending, setPending] = useState<Pending[]>([])
-  const [checks, setChecks] = useState<Record<string, InboxCheck>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -35,30 +28,7 @@ export function ThreadsPanel() {
     try {
       const response = await api.threadsPending()
       setPending(response.accounts)
-      // Ask the deployed endpoint what it actually returns for the Inbox: this is
-      // the same call the list makes, so a mismatch here explains a flat list.
-      const results: Record<string, InboxCheck> = {}
-      for (const account of response.accounts) {
-        try {
-          const threads = await api.threads({
-            accountId: account.accountId,
-            folder: 'inbox',
-            limit: 100,
-          })
-          results[account.accountId] = {
-            conversations: threads.threads.length,
-            messages: threads.threads.reduce((total, thread) => total + thread.total, 0),
-            error: threads.errors[0]?.message ?? null,
-          }
-        } catch (reason) {
-          results[account.accountId] = {
-            conversations: 0,
-            messages: 0,
-            error: errorText(reason, t),
-          }
-        }
-      }
-      setChecks(results)
+
     } catch (reason) {
       setError(errorText(reason, t))
     }
@@ -110,16 +80,6 @@ export function ThreadsPanel() {
                     ? ` · ${t('settings.threadsPending', { count: entry.pending })}`
                     : ''}
                 </span>
-                {checks[entry.accountId] ? (
-                  <span className="block text-[11px] text-muted">
-                    {checks[entry.accountId].error
-                      ? `Inbox: ${checks[entry.accountId].error}`
-                      : t('settings.threadsInbox', {
-                          conversations: checks[entry.accountId].conversations,
-                          messages: checks[entry.accountId].messages,
-                        })}
-                  </span>
-                ) : null}
               </span>
               {entry.pending > 0 ? (
                 <button

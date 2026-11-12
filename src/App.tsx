@@ -348,14 +348,23 @@ export default function App() {
       return
     }
     let cancelled = false
+    const requestStartedAt = performance.now()
+    console.log(
+      `[list] start folder=${folder} account=${selectedAccountId} label=${selectedLabelId ?? '-'} refresh=${refreshKey} view=${view}`,
+    )
     const request = api
       .threads({ accountId: selectedAccountId, folder, labelId: selectedLabelId })
-      .then((response) => ({
-        messages: response.threads.map(threadSummary),
-        nextCursor: response.nextCursor,
-        errors: response.errors,
-        syncing: false,
-      }))
+      .then((response) => {
+        console.log(
+          `[list] folder=${folder} account=${selectedAccountId} threads=${response.threads.length} syncing=${Boolean(response.syncing)} ms=${Math.round(performance.now() - requestStartedAt)}`,
+        )
+        return {
+          messages: response.threads.map(threadSummary),
+          nextCursor: response.nextCursor,
+          errors: response.errors,
+          syncing: Boolean(response.syncing),
+        }
+      })
     request
       .then((response) => {
         if (cancelled) {
@@ -384,7 +393,16 @@ export default function App() {
           setAuth('needed')
           return
         }
-        setSettingsError(errorText(error, tRef.current))
+        console.warn(
+          `[list] failed after ${Math.round(performance.now() - requestStartedAt)}ms: ${errorText(error, tRef.current)}`,
+        )
+        setListErrors([
+          {
+            accountId: 'list',
+            email: selectedAccountId === 'all' ? t('common.allAccounts') : '',
+            message: errorText(error, tRef.current),
+          },
+        ])
       })
       .finally(() => {
         if (!cancelled) {
@@ -394,7 +412,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [auth, selectedAccountId, folder, selectedLabelId, refreshKey])
+  }, [auth, selectedAccountId, folder, selectedLabelId, refreshKey, view])
 
   useEffect(() => {
     if (!syncingMessages || auth !== 'ok') {
@@ -428,10 +446,9 @@ export default function App() {
         }
         const signature = syncSignature(overview)
         if (syncSignatureRef.current === '') {
+          // First poll only records the state: refreshing here made every return
+          // to the list fetch twice for nothing.
           syncSignatureRef.current = signature
-          // The first poll may already come after a very fast background sync,
-          // so always refresh once to pick up messages written to the mirror.
-          setRefreshKey((key) => key + 1)
         } else if (signature !== syncSignatureRef.current) {
           syncSignatureRef.current = signature
           setRefreshKey((key) => key + 1)
@@ -1230,6 +1247,7 @@ export default function App() {
     setListLoaded(false)
     setMessages([])
     setFolder(next)
+    setRefreshKey((key) => key + 1)
     setSelectedLabelId(null)
     setView('mail')
     setSelectedMessageId(null)
@@ -1243,6 +1261,7 @@ export default function App() {
     setListLoaded(false)
     setMessages([])
     setSelectedLabelId(id)
+    setRefreshKey((key) => key + 1)
     setView('mail')
     setSelectedMessageId(null)
     setDetail(null)
@@ -1395,10 +1414,10 @@ export default function App() {
           searching={searchLoading}
           onScopeChange={setSearchScope}
           onSelectAccount={(id) => {
-
             setListLoaded(false)
             setMessages([])
             setSelectedAccountId(id)
+            setRefreshKey((key) => key + 1)
             setSelectedLabelId(null)
             setSelectedMessageId(null)
             setDetail(null)
@@ -1420,6 +1439,17 @@ export default function App() {
                 {error.email}: {error.message}
               </p>
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                setListErrors([])
+                setListLoaded(false)
+                setRefreshKey((key) => key + 1)
+              }}
+              className="mt-1.5 rounded-lg border border-amber-300 bg-white px-2 py-1 font-medium text-amber-900 hover:bg-amber-100"
+            >
+              {t('common.retry')}
+            </button>
           </div>
         ) : null}
 

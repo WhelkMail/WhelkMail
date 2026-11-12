@@ -51,6 +51,13 @@ export class ApiError extends Error {
   }
 }
 
+/** Requests that feed the list give up instead of hanging the UI. */
+function listSignal(ms = 20_000): AbortSignal {
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), ms)
+  return controller.signal
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   if (init.body && !headers.has('Content-Type')) {
@@ -207,7 +214,7 @@ export const api = {
     if (params.limit) {
       search.set('limit', String(params.limit))
     }
-    return request(`/api/threads?${search.toString()}`)
+    return request(`/api/threads?${search.toString()}`, { signal: listSignal() })
   },
   threadsPending(): Promise<{
     accounts: { accountId: string; email: string; pending: number; messages: number; threads: number }[]
@@ -219,7 +226,7 @@ export const api = {
   },
   threadMessages(accountId: string, threadKey: string): Promise<{ messages: MessageSummary[] }> {
     const search = new URLSearchParams({ accountId, threadKey })
-    return request(`/api/threads/messages?${search.toString()}`)
+    return request(`/api/threads/messages?${search.toString()}`, { signal: listSignal() })
   },
   retention(): Promise<{ retention: RetentionSummary }> {
     return request('/api/retention')
