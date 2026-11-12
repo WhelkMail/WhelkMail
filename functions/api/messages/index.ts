@@ -15,6 +15,7 @@ import { imapMessageId, parseImapMessageId, parseRelayMessageId } from '../../_l
 import { dateOf, parseHeaders, toMailbox, toMailboxes } from '../../_lib/mail/parse'
 import { relayDraftMirrorIds } from '../../_lib/mail/relay-target'
 import { isSchemaError } from '../../_lib/schema'
+import { needsBackgroundSync, runBackgroundSync } from '../../_lib/sync-trigger'
 import {
   clampPageSize,
   compareByDateDesc,
@@ -293,49 +294,6 @@ async function loadByLabel(
     }
   }
   return { messages, errors }
-}
-
-const SYNC_TTL_MS = 5 * 60_000
-const BACKFILL_RETRY_MS = 8_000
-const syncInFlight = new Set<string>()
-
-function needsBackgroundSync(state: MailboxSyncState | null): boolean {
-  if (!state?.lastSyncedAt) {
-    return true
-  }
-  const lastSyncedAt = Date.parse(state.lastSyncedAt)
-  if (!Number.isFinite(lastSyncedAt)) {
-    return true
-  }
-  const age = Date.now() - lastSyncedAt
-  if (state.status === 'partial') {
-    return age > BACKFILL_RETRY_MS
-  }
-  return age > SYNC_TTL_MS
-}
-
-async function runBackgroundSync(
-  env: Env,
-  account: AccountRow,
-  folder: Folder,
-): Promise<void> {
-  const key = `${account.id}:${folder}`
-  if (syncInFlight.has(key)) {
-    return
-  }
-  syncInFlight.add(key)
-  try {
-    await runSyncChunk(env, account, folder)
-  } catch (error) {
-    await markSyncError(
-      env,
-      account.id,
-      folder,
-      error instanceof Error ? error.message : String(error),
-    ).catch(() => undefined)
-  } finally {
-    syncInFlight.delete(key)
-  }
 }
 
 export const onRequestGet: PagesFunction<Env> = async (context) => {

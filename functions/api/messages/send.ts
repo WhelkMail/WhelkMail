@@ -16,6 +16,7 @@ import { resolveCopyTarget, storeCopyInMailbox } from '../../_lib/mail/relay-tar
 import { sendWithAccount } from '../../_lib/mail/smtp'
 import { queueSync } from '../../_lib/sync'
 import { buildMime, snippetOf } from '../../_lib/mime'
+import { normalizeMessageId, threadKeyFor } from '../../_lib/mail/thread-key'
 import { getRelay, type RelayAdapter } from '../../_lib/relay'
 import { copyObjectKey, getStorage, rescueCandidates } from '../../_lib/storage'
 
@@ -37,19 +38,21 @@ interface PersistInput {
   /** Driver that actually holds this copy (the rescue one after a failed APPEND). */
   storageDriver?: 'drive' | 'r2' | 'imap'
   attachments: AttachmentMeta[]
+  threadKey: string
   status: 'sent' | 'failed'
 }
 
 async function persistRelayMessage(input: PersistInput): Promise<MessageRow> {
   const createdAt = new Date().toISOString()
   await input.env.DB.prepare(
-    'INSERT INTO messages (id, account_id, folder, message_id, from_name, from_email, to_json, cc_json, bcc_json, subject, snippet, body_text, body_html, sent_at, size, storage_driver, storage_key, attachments_json, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO messages (id, account_id, folder, message_id, thread_key, from_name, from_email, to_json, cc_json, bcc_json, subject, snippet, body_text, body_html, sent_at, size, storage_driver, storage_key, attachments_json, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
   )
     .bind(
       input.id,
       input.account.id,
       'sent',
       input.messageId,
+      input.threadKey,
       input.account.display_name,
       input.account.email,
       JSON.stringify(input.to),
@@ -170,6 +173,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       html: input.html,
       attachments,
       messageId,
+      inReplyTo: input.inReplyTo ?? null,
+      references: input.references ?? null,
       date: now,
     }
     const mime = buildMime(mimeBase)
@@ -257,7 +262,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     html: input.html,
     attachments,
     messageId,
+    inReplyTo: input.inReplyTo ?? null,
+    references: input.references ?? null,
     date: now,
+  })
+  const threadKey = threadKeyFor({
+    messageId,
+    inReplyTo: input.inReplyTo,
+    references: input.references,
+    fallback: normalizeMessageId(messageId) || id,
   })
   let storageKey = ''
   let storageDriver: 'drive' | 'r2' | 'imap' = account.storage_driver === 'r2' ? 'r2' : 'drive'
@@ -337,6 +350,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       storageKey,
       storageDriver,
       attachments: attachmentMeta,
+      threadKey,
       status: 'sent',
     })
     if (input.draftId) {
@@ -364,6 +378,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       storageKey,
       storageDriver,
       attachments: attachmentMeta,
+      threadKey,
       status: 'failed',
     })
     return json({ error: 'Send failed', code: 'message_send_failed', detail, messageId: id }, 502)

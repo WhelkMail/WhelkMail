@@ -8,6 +8,7 @@ import { deleteDraftById } from '../../_lib/mail/drafts'
 import { saveDraft } from '../../_lib/mail/imap'
 import { imapMessageId, parseRelayMessageId } from '../../_lib/mail/ids'
 import { buildMime, snippetOf } from '../../_lib/mime'
+import { normalizeMessageId, threadKeyFor } from '../../_lib/mail/thread-key'
 import { copyObjectKey, getStorage, rescueCandidates } from '../../_lib/storage'
 import { removeStoredCopy, resolveCopyTarget, storeCopyInMailbox } from '../../_lib/mail/relay-target'
 import { queueSync } from '../../_lib/sync'
@@ -83,7 +84,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     html: input.html,
     attachments,
     messageId,
+    inReplyTo: input.inReplyTo ?? null,
+    references: input.references ?? null,
     date: now,
+  })
+  const threadKey = threadKeyFor({
+    messageId,
+    inReplyTo: input.inReplyTo,
+    references: input.references,
+    fallback: normalizeMessageId(messageId) || id,
   })
 
   if (account.kind === 'imap') {
@@ -188,7 +197,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       )
     }
     await context.env.DB.prepare(
-      'UPDATE messages SET to_json = ?, cc_json = ?, bcc_json = ?, subject = ?, snippet = ?, body_text = ?, body_html = ?, sent_at = ?, size = ?, storage_driver = ?, storage_key = ?, attachments_json = ?, status = ?, folder = ? WHERE id = ?',
+      'UPDATE messages SET to_json = ?, cc_json = ?, bcc_json = ?, subject = ?, snippet = ?, body_text = ?, body_html = ?, sent_at = ?, size = ?, storage_driver = ?, storage_key = ?, attachments_json = ?, thread_key = ?, status = ?, folder = ? WHERE id = ?',
     )
       .bind(
         JSON.stringify(to),
@@ -203,6 +212,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         storageDriver,
         storageKey,
         JSON.stringify(attachmentMeta),
+        threadKey,
         'draft',
         'draft',
         relayId,
@@ -210,13 +220,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       .run()
   } else {
     await context.env.DB.prepare(
-      'INSERT INTO messages (id, account_id, folder, message_id, from_name, from_email, to_json, cc_json, bcc_json, subject, snippet, body_text, body_html, sent_at, size, storage_driver, storage_key, attachments_json, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO messages (id, account_id, folder, message_id, thread_key, from_name, from_email, to_json, cc_json, bcc_json, subject, snippet, body_text, body_html, sent_at, size, storage_driver, storage_key, attachments_json, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
       .bind(
         relayId,
         account.id,
         'draft',
         messageId,
+        threadKey,
         account.display_name,
         account.email,
         JSON.stringify(to),

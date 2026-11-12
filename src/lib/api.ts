@@ -17,6 +17,7 @@ import type {
   MailboxSyncState,
   MailFilter,
   MessageDetail,
+  MessageSummary,
   MessageListResult,
   MessageSearchResult,
   PushPrefs,
@@ -24,6 +25,7 @@ import type {
   RetentionSummary,
   SearchScope,
   StorageCleanupEntry,
+  ThreadListResult,
   SendPayload,
   StorageOptions,
   SyncOverview,
@@ -187,6 +189,37 @@ export const api = {
   },
   clearStorageCleanup(): Promise<{ ok: boolean }> {
     return request('/api/storage/cleanup', { method: 'DELETE' })
+  },
+  threads(params: {
+    accountId: string
+    folder: Folder
+    labelId?: string | null
+    before?: string
+    limit?: number
+  }): Promise<ThreadListResult> {
+    const search = new URLSearchParams({ accountId: params.accountId, folder: params.folder })
+    if (params.labelId) {
+      search.set('labelId', params.labelId)
+    }
+    if (params.before) {
+      search.set('before', params.before)
+    }
+    if (params.limit) {
+      search.set('limit', String(params.limit))
+    }
+    return request(`/api/threads?${search.toString()}`)
+  },
+  threadsPending(): Promise<{
+    accounts: { accountId: string; email: string; pending: number; messages: number; threads: number }[]
+  }> {
+    return request('/api/threads/rebuild')
+  },
+  rebuildThreads(accountId: string): Promise<{ updated: number; pending: number }> {
+    return request('/api/threads/rebuild', { method: 'POST', body: JSON.stringify({ accountId }) })
+  },
+  threadMessages(accountId: string, threadKey: string): Promise<{ messages: MessageSummary[] }> {
+    const search = new URLSearchParams({ accountId, threadKey })
+    return request(`/api/threads/messages?${search.toString()}`)
   },
   retention(): Promise<{ retention: RetentionSummary }> {
     return request('/api/retention')

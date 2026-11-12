@@ -177,7 +177,29 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   messages.sort(compareByDateDesc)
-  const page = pageOf(messages, limit)
+  // Search results are conversations too, like Gmail: matching messages of the
+  // same thread collapse into one row (counts refer to the matches on this page).
+  const grouped = new Map<string, MessageSummary>()
+  for (const message of messages) {
+    const key = message.threadKey ?? message.id
+    const existing = grouped.get(key)
+    if (!existing) {
+      grouped.set(key, { ...message, threadKey: key, threadCount: 1, threadUnread: message.unread ? 1 : 0 })
+      continue
+    }
+    existing.threadCount = (existing.threadCount ?? 1) + 1
+    existing.threadUnread = (existing.threadUnread ?? 0) + (message.unread ? 1 : 0)
+    existing.unread = existing.unread || message.unread
+    if (new Date(message.date).getTime() > new Date(existing.date).getTime()) {
+      const count = existing.threadCount
+      const unreadCount = existing.threadUnread
+      Object.assign(existing, message)
+      existing.threadKey = key
+      existing.threadCount = count
+      existing.threadUnread = unreadCount
+    }
+  }
+  const page = pageOf([...grouped.values()].sort(compareByDateDesc), limit)
   await searchLabels(context.env, page.items)
 
   let contacts: ReturnType<typeof toContact>[] = []

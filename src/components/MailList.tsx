@@ -15,6 +15,30 @@ import { useI18n } from '../i18n'
 import { cn, formatDate, initials, labelStyle } from '../lib/utils'
 
 type MessageAction = 'delete' | 'spam' | 'move'
+
+/**
+ * Gmail-style sender list for a conversation: the first two senders, then "+N".
+ * The count itself is rendered next to the names.
+ */
+function threadLabel(message: MessageSummary): string {
+  const senders = (message.threadParticipants ?? []).map(
+    (item) => item.name?.trim() || item.email,
+  )
+  if (senders.length === 0) {
+    return message.from.name?.trim() || message.from.email
+  }
+  if (senders.length <= 2) {
+    return senders.join(', ')
+  }
+  return `${senders.slice(0, 2).join(', ')} +${senders.length - 2}`
+}
+
+function threadTitle(message: MessageSummary): string {
+  const senders = (message.threadParticipants ?? []).map(
+    (item) => (item.name?.trim() ? `${item.name} <${item.email}>` : item.email),
+  )
+  return senders.length > 0 ? senders.join(', ') : message.subject
+}
 type MoveTarget = 'inbox' | 'spam' | 'trash'
 
 interface MailListProps {
@@ -637,11 +661,17 @@ export function MailList({
                           'truncate text-sm',
                           message.unread ? 'font-semibold' : 'font-medium',
                         )}
+                        title={threadTitle(message)}
                       >
-                        {message.folder === 'inbox' || message.folder === 'spam'
-                          ? label
-                          : t('list.to', { value: label })}
+                        {(message.threadCount ?? 0) > 1
+                          ? threadLabel(message)
+                          : message.folder === 'inbox' || message.folder === 'spam'
+                            ? label
+                            : t('list.to', { value: label })}
                       </p>
+                      {(message.threadCount ?? 0) > 1 ? (
+                        <span className="shrink-0 text-xs text-muted">{message.threadCount}</span>
+                      ) : null}
                       {labelName || showFolder ? (
                         <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-muted">
                           {folderName(message.folder, t)}

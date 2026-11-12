@@ -123,6 +123,29 @@ export interface FilterInput {
 
 export type SignatureMode = 'shared' | 'per_account'
 
+/** One conversation row in the message list (threads are per account). */
+export interface MailThread {
+  threadKey: string
+  accountId: string
+  accountEmail: string
+  accountName: string
+  folder: Folder
+  /** Newest message of the conversation in this folder. */
+  latest: MessageSummary
+  total: number
+  unread: number
+  /** Distinct senders, oldest first: the list shows them Gmail-style. */
+  participants: Mailbox[]
+}
+
+export interface ThreadListResult {
+  threads: MailThread[]
+  errors: { accountId: string; email: string; message: string }[]
+  /** A background sync was scheduled: the client polls and refreshes. */
+  syncing?: boolean
+  nextCursor: string | null
+}
+
 export interface StorageCleanupEntry {
   id: string
   accountEmail: string
@@ -214,11 +237,23 @@ export interface MessageSummary {
   hasAttachments: boolean
   status: MessageStatus
   labelIds: string[]
+  /** Conversation this message belongs to (per account). */
+  threadKey?: string | null
+  /** Messages in the conversation, filled by the grouped list. */
+  threadCount?: number
+  /** Unread messages in the conversation, filled by the grouped list. */
+  threadUnread?: number
+  /** Senders of the conversation, oldest first. */
+  threadParticipants?: Mailbox[]
 }
 
 export interface MessageDetail extends MessageSummary {
   /** Addresses from Delivered-To/X-Original-To/Received that reveal a forwarding alias. */
   aliasAddresses: string[]
+  /** RFC 5322 Message-ID, used as In-Reply-To when answering. */
+  messageId: string | null
+  /** Reference chain of this message, extended when answering. */
+  references: string | null
   text: string
   html: string | null
   attachments: AttachmentMeta[]
@@ -254,6 +289,10 @@ export interface AttachmentInput {
 
 export interface SendPayload {
   accountId: string
+  /** Message-ID answered by this compose, so the copy threads too. */
+  inReplyTo?: string | null
+  references?: string | null
+
   draftId?: string
   to: string[]
   cc?: string[]
@@ -266,6 +305,10 @@ export interface SendPayload {
 
 export interface ComposeSeed {
   accountId: string
+  /** Message-ID answered by this compose, so the copy threads too. */
+  inReplyTo?: string | null
+  references?: string | null
+
   to: string[]
   cc: string[]
   bcc: string[]
@@ -287,6 +330,10 @@ export interface DraftPayload {
 
 export interface DraftSavePayload {
   accountId: string
+  /** Message-ID answered by this compose, so the copy threads too. */
+  inReplyTo?: string | null
+  references?: string | null
+
   draftId?: string
   to: string[]
   cc: string[]

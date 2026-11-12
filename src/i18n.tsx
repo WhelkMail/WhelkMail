@@ -91,6 +91,7 @@ const en: Record<string, string> = {
   'list.unknownSender': '(unknown sender)',
   'list.to': 'To: {value}',
   'list.draft': 'draft',
+  'list.threadCount': '{count} messages in this conversation',
   'list.notSent': 'not sent',
   'list.noSubject': '(no subject)',
   'list.account': 'account',
@@ -106,6 +107,9 @@ const en: Record<string, string> = {
   'list.moveSpam': 'Spam',
   'list.moveTrash': 'Trash',
 
+  'reading.conversation': 'Conversation · {count} messages',
+  'reading.showQuoted': 'Show quoted text',
+  'reading.hideQuoted': 'Hide quoted text',
   'reading.select': 'Select a message',
   'reading.from': 'From:',
   'reading.to': 'To:',
@@ -415,6 +419,23 @@ const en: Record<string, string> = {
   'filters.deleted': 'Filter deleted',
 
   'settings.serverConfig': 'Server configuration status',
+  'settings.build': 'Build',
+  'settings.threads': 'Conversations',
+  'settings.threadsHint':
+    'Messages stored before conversations existed are grouped a few per sync run. This rebuilds the grouping from the headers only, without downloading bodies.',
+  'settings.threadsStats': '{messages} messages · {threads} conversations',
+  'settings.threadsInbox': 'Inbox as returned by the list: {conversations} conversations, {messages} messages',
+  'settings.threadsPending': '{count} messages still to group',
+  'settings.threadsRebuild': 'Rebuild',
+  'settings.threadsRebuilt': '{updated} messages grouped, {pending} left',
+  'settings.threadsNone': 'Everything is already grouped.',
+  'settings.cleanupLog': 'Objects left behind',
+  'settings.cleanupLogHint':
+    'When deleting an account some objects cannot be removed from Drive or R2. The account and its credentials are gone, so they stay listed here for manual cleanup.',
+  'settings.cleanupLogEmpty': 'Nothing left behind.',
+  'settings.cleanupLogClear': 'Clear list',
+  'settings.cleanupLogClearConfirm': 'Clear the list? The objects stay where they are.',
+
   'settings.googleOAuth': 'Google OAuth',
   'settings.microsoftOAuth': 'Microsoft OAuth',
   'settings.language': 'Language',
@@ -663,6 +684,7 @@ const it: Record<string, string> = {
   'list.unknownSender': '(mittente sconosciuto)',
   'list.to': 'A: {value}',
   'list.draft': 'bozza',
+  'list.threadCount': '{count} messaggi in questa conversazione',
   'list.notSent': 'non inviata',
   'list.noSubject': '(senza oggetto)',
   'list.account': 'account',
@@ -678,6 +700,9 @@ const it: Record<string, string> = {
   'list.moveSpam': 'Spam',
   'list.moveTrash': 'Cestino',
 
+  'reading.conversation': 'Conversazione · {count} messaggi',
+  'reading.showQuoted': 'Mostra il testo citato',
+  'reading.hideQuoted': 'Nascondi il testo citato',
   'reading.select': 'Seleziona un messaggio',
   'reading.from': 'Da:',
   'reading.to': 'A:',
@@ -992,6 +1017,23 @@ const it: Record<string, string> = {
   'filters.deleted': 'Filtro eliminato',
 
   'settings.serverConfig': 'Stato configurazione server',
+  'settings.build': 'Build',
+  'settings.threads': 'Conversazioni',
+  'settings.threadsHint':
+    'I messaggi salvati prima delle conversazioni vengono raggruppati a poco a poco a ogni sync. Qui la ricostruzione usa solo le intestazioni, senza scaricare i corpi.',
+  'settings.threadsStats': '{messages} messaggi · {threads} conversazioni',
+  'settings.threadsInbox': 'Inbox come la restituisce la lista: {conversations} conversazioni, {messages} messaggi',
+  'settings.threadsPending': '{count} messaggi ancora da raggruppare',
+  'settings.threadsRebuild': 'Ricostruisci',
+  'settings.threadsRebuilt': '{updated} messaggi raggruppati, {pending} rimasti',
+  'settings.threadsNone': 'È già tutto raggruppato.',
+  'settings.cleanupLog': 'Oggetti rimasti indietro',
+  'settings.cleanupLogHint':
+    'Eliminando un account alcuni oggetti possono restare su Drive o R2. L’account e le sue credenziali non esistono più, quindi restano elencati qui per la pulizia manuale.',
+  'settings.cleanupLogEmpty': 'Nessun oggetto rimasto indietro.',
+  'settings.cleanupLogClear': 'Svuota elenco',
+  'settings.cleanupLogClearConfirm': 'Svuotare l’elenco? Gli oggetti restano dove sono.',
+
   'settings.googleOAuth': 'Google OAuth',
   'settings.microsoftOAuth': 'Microsoft OAuth',
   'settings.language': 'Lingua',

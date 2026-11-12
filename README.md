@@ -40,6 +40,7 @@ Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a fam
 
 - Message list with a full-width reading view or an optional right-side reading pane, plus Gmail-style multi-select for delete, move and spam actions.
 - Inbox, Sent, Drafts and Spam with autosave and reopenable drafts.
+- Gmail-style conversations (RFC `References` when available, subject fallback otherwise): one list row per thread showing the senders and the message count (`Mario, Luca +2  5`), and a reading pane that stacks every message of the thread (your replies included) as a one-line header you can click to expand. Threads are per account and every standard view is grouped: inbox, sent, drafts, spam, label views and search results.
 - HTML bodies in a sandboxed frame with optional remote images; attachment indicators from `BODYSTRUCTURE` without downloading the body up front.
 - Installable PWA, mobile drawer layout and Web Push notifications with per-account/folder preferences.
 - English by default, Italian available; the dictionary is extensible.

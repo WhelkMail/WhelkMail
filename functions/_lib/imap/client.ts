@@ -362,7 +362,7 @@ export class ImapConnection {
       return []
     }
     const { parts } = await this.command(
-      `UID FETCH ${uids.join(',')} (UID FLAGS RFC822.SIZE BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS (FROM TO CC SUBJECT DATE MESSAGE-ID)])`,
+      `UID FETCH ${uids.join(',')} (UID FLAGS RFC822.SIZE BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS (FROM TO CC SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES)])`,
     )
     const headers: ImapHeader[] = []
     for (const part of parts) {

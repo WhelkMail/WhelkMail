@@ -12,6 +12,7 @@ import type {
   Folder,
   HealthStatus,
   Label,
+  MailThread,
   LabelInput,
   LabelColor,
   MailFilter,
@@ -144,7 +145,9 @@ export default function App() {
   const [actionBusy, setActionBusy] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(initialRoute.messageId)
   const [detail, setDetail] = useState<MessageDetail | null>(null)
+  const [threadMessages, setThreadMessages] = useState<MessageSummary[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
+  const [detailSwitching, setDetailSwitching] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [view, setView] = useState<View>(initialRoute.view)
   const [query, setQuery] = useState('')
@@ -345,8 +348,15 @@ export default function App() {
       return
     }
     let cancelled = false
-    api
-      .messages(selectedAccountId, folder, selectedLabelId)
+    const request = api
+      .threads({ accountId: selectedAccountId, folder, labelId: selectedLabelId })
+      .then((response) => ({
+        messages: response.threads.map(threadSummary),
+        nextCursor: response.nextCursor,
+        errors: response.errors,
+        syncing: false,
+      }))
+    request
       .then((response) => {
         if (cancelled) {
           return
@@ -509,17 +519,54 @@ export default function App() {
     if (!selectedMessageId || auth !== 'ok') {
       setDetail(null)
       setDetailError(null)
+      setThreadMessages([])
       return
     }
     let cancelled = false
-    setDetailLoading(true)
+    // Moving inside the same conversation must not blank the pane: keep what is
+    // on screen and show a thin progress line until the new body arrives.
+    const sameThread = Boolean(
+      detail &&
+        summaryThreadKey(selectedMessageId) &&
+        detail.threadKey === summaryThreadKey(selectedMessageId),
+    )
+    if (sameThread) {
+      setDetailSwitching(true)
+    } else {
+      setDetailLoading(true)
+      setThreadMessages([])
+    }
     setDetailError(null)
     api
       .message(selectedMessageId)
       .then((response) => {
-        if (!cancelled) {
-          setDetail(response.message)
+        if (cancelled) {
+          return
         }
+        setDetail(response.message)
+        // The row in the list already knows the conversation; fall back to it when
+        // an older cached detail response does not carry the key yet.
+        const threadKey = response.message.threadKey ?? summaryThreadKey(selectedMessageId)
+        if (!threadKey) {
+          setThreadMessages([])
+          return
+        }
+        if (sameThread) {
+          // Already showing the conversation: leave the stack alone.
+          return
+        }
+        api
+          .threadMessages(response.message.accountId, threadKey)
+          .then((thread) => {
+            if (!cancelled) {
+              setThreadMessages(thread.messages)
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setThreadMessages([])
+            }
+          })
       })
       .catch((error: unknown) => {
         if (cancelled) {
@@ -534,6 +581,7 @@ export default function App() {
       .finally(() => {
         if (!cancelled) {
           setDetailLoading(false)
+          setDetailSwitching(false)
         }
       })
     return () => {
@@ -646,13 +694,13 @@ export default function App() {
         setSearchResults((current) => mergePage(current ?? [], response.messages))
         setSearchCursor(response.nextCursor ?? null)
       } else {
-        const response = await api.messages(
-          selectedAccountId,
+        const response = await api.threads({
+          accountId: selectedAccountId,
           folder,
-          selectedLabelId,
-          cursor,
-        )
-        setMessages((current) => mergePage(current, response.messages))
+          labelId: selectedLabelId,
+          before: cursor,
+        })
+        setMessages((current) => mergePage(current, response.threads.map(threadSummary)))
         setNextCursor(response.nextCursor ?? null)
       }
     } catch (error) {
@@ -663,6 +711,27 @@ export default function App() {
       setSettingsError(errorText(error, tRef.current))
     } finally {
       setLoadingMore(false)
+    }
+  }
+
+  /** Conversation key of a message already listed, if any. */
+  function summaryThreadKey(id: string | null): string | null {
+    if (!id) {
+      return null
+    }
+    const found =
+      messages.find((item) => item.id === id) ?? searchResults?.find((item) => item.id === id)
+    return found?.threadKey ?? null
+  }
+
+  /** A conversation row is rendered with the newest message plus its counters. */
+  function threadSummary(thread: MailThread): MessageSummary {
+    return {
+      ...thread.latest,
+      threadKey: thread.threadKey,
+      threadCount: thread.total,
+      threadUnread: thread.unread,
+      threadParticipants: thread.participants,
     }
   }
 
@@ -786,6 +855,8 @@ export default function App() {
     )} wrote:\n${quoted}`
     openCompose(null, {
       accountId: sendingAccountId,
+      inReplyTo: message.messageId,
+      references: message.references,
       to,
       cc,
       bcc: [],
@@ -1489,8 +1560,11 @@ export default function App() {
                 />
                 <ReadingPane
                   message={detail}
+                  thread={threadMessages}
+                  onSelectMessage={(id) => void selectMessage(id)}
                   labels={labels}
                   loading={detailLoading}
+                  switching={detailSwitching}
                   error={detailError}
                   allowRemoteImages={allowRemoteImages}
                   onAlwaysShowImages={() => void changeAllowRemoteImages(true)}
@@ -1533,8 +1607,11 @@ export default function App() {
             ) : selectedMessageId ? (
               <ReadingPane
                 message={detail}
+                thread={threadMessages}
+                onSelectMessage={(id) => void selectMessage(id)}
                 labels={labels}
                 loading={detailLoading}
+                switching={detailSwitching}
                 error={detailError}
                 allowRemoteImages={allowRemoteImages}
                 onAlwaysShowImages={() => void changeAllowRemoteImages(true)}

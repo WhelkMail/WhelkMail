@@ -21,6 +21,10 @@ export interface MimeInput {
   html?: string
   attachments: MimeAttachment[]
   messageId: string
+  /** Message-ID of the answered message, so replies thread in every client. */
+  inReplyTo?: string | null
+  /** Full References chain of the answered message. */
+  references?: string | null
   date: Date
   includeBcc?: boolean
   headers?: string[]
@@ -77,6 +81,13 @@ export function buildMime(input: MimeInput): Uint8Array {
     `From: ${formatAddress(input.from)}`,
     `To: ${input.to.map(formatAddress).join(', ')}`,
   ]
+  if (input.inReplyTo) {
+    headers.push(`In-Reply-To: ${clean(input.inReplyTo)}`)
+    const chain = (input.references ?? '').trim()
+    headers.push(
+      `References: ${clean(chain ? `${chain} ${input.inReplyTo}` : input.inReplyTo)}`,
+    )
+  }
   if (input.cc.length > 0) {
     headers.push(`Cc: ${input.cc.map(formatAddress).join(', ')}`)
   }

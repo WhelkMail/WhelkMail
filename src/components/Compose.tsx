@@ -157,6 +157,9 @@ export function Compose({
     setAttachments((current) => [...current, ...loaded])
   }
 
+  const inReplyTo = seed?.inReplyTo ?? null
+  const references = seed?.references ?? null
+
   function buildBasePayload(reportError = true): DraftSavePayload | null {
     if (!accountId) {
       if (reportError) {
@@ -177,6 +180,8 @@ export function Compose({
     return {
       accountId,
       draftId: draftId ?? undefined,
+      inReplyTo: inReplyTo ?? undefined,
+      references: references ?? undefined,
       to: toAddresses,
       cc: ccAddresses,
       bcc: bccAddresses,

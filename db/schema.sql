@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS messages (
   account_id TEXT NOT NULL,
   folder TEXT NOT NULL DEFAULT 'sent',
   message_id TEXT,
+  thread_key TEXT,
   from_name TEXT,
   from_email TEXT NOT NULL,
   to_json TEXT NOT NULL,
@@ -66,6 +67,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_account_folder ON messages (account_id, folder, sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages (account_id, thread_key, sent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_accounts_incoming_label ON accounts (incoming_label_id);
 
 CREATE TABLE IF NOT EXISTS labels (
@@ -148,6 +150,7 @@ CREATE TABLE IF NOT EXISTS imap_messages (
   uid_validity INTEGER,
   stable_key TEXT NOT NULL,
   message_id TEXT,
+  thread_key TEXT,
   from_name TEXT,
   from_email TEXT NOT NULL,
   to_json TEXT NOT NULL,
@@ -171,6 +174,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_imap_messages_uid ON imap_messages (accoun
 CREATE INDEX IF NOT EXISTS idx_imap_messages_list ON imap_messages (account_id, folder, sent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_imap_messages_page ON imap_messages (account_id, folder, sent_at DESC, id);
 CREATE INDEX IF NOT EXISTS idx_imap_messages_stable ON imap_messages (account_id, stable_key);
+CREATE INDEX IF NOT EXISTS idx_imap_messages_thread ON imap_messages (account_id, thread_key, sent_at DESC);
 
 CREATE TABLE IF NOT EXISTS imap_body_cache (
   message_id TEXT PRIMARY KEY,

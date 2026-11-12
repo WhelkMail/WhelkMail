@@ -58,6 +58,7 @@ export interface MessageRow {
   account_id: string
   folder: string
   message_id: string | null
+  thread_key: string | null
   from_name: string | null
   from_email: string
   to_json: string
@@ -153,6 +154,7 @@ export function relayMessageSummary(row: MessageRow, account: AccountRow): Messa
     hasAttachments: attachments.length > 0,
     status: row.status === 'failed' ? 'failed' : row.status === 'draft' ? 'draft' : 'sent',
     labelIds: [],
+    threadKey: row.thread_key ?? null,
   }
 }
 

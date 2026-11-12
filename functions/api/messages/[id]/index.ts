@@ -139,6 +139,9 @@ async function relayDetail(env: Env, id: string): Promise<MessageDetail | null> 
     hasAttachments: attachments.length > 0,
     status: row.status === 'failed' ? 'failed' : row.status === 'draft' ? 'draft' : 'sent',
     aliasAddresses: [],
+    messageId: row.message_id ?? null,
+    references: null,
+    threadKey: row.thread_key ?? null,
     text: row.body_text,
     html: row.body_html,
     attachments,
@@ -175,6 +178,18 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       throw error
     }
   }
+  let threadKey: string | null = null
+  try {
+    const mirror = await context.env.DB.prepare('SELECT thread_key FROM imap_messages WHERE id = ?')
+      .bind(id)
+      .first<{ thread_key: string | null }>()
+    threadKey = mirror?.thread_key ?? null
+  } catch (error) {
+    if (!isSchemaError(error)) {
+      throw error
+    }
+  }
+
   const detail: MessageDetail = {
     id,
     accountId: loaded.account.id,
@@ -192,6 +207,9 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     hasAttachments: attachments.length > 0,
     status: loaded.folder === 'draft' ? 'draft' : 'sent',
     aliasAddresses: aliasAddresses(email),
+    messageId: email.messageId ?? null,
+    references: email.references ?? null,
+    threadKey,
     text,
     html: email.html ? inlineCidImages(email, email.html) : null,
     attachments,

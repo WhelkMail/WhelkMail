@@ -101,6 +101,8 @@ export const attachmentInputSchema = z.object({
 
 export const draftSchema = z.object({
   accountId: z.string().min(1),
+  inReplyTo: z.string().trim().max(998).optional(),
+  references: z.string().trim().max(4000).optional(),
   draftId: z.string().optional(),
   to: z.array(email).max(50).default([]),
   cc: z.array(email).max(50).default([]),
@@ -113,6 +115,8 @@ export const draftSchema = z.object({
 
 export const sendSchema = z.object({
   accountId: z.string().min(1),
+  inReplyTo: z.string().trim().max(998).optional(),
+  references: z.string().trim().max(4000).optional(),
   draftId: z.string().optional(),
   to: z.array(email).min(1).max(50),
   cc: z.array(email).max(50).default([]),

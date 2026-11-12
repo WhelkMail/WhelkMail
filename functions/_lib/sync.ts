@@ -12,6 +12,12 @@ import type { ImapConnection, ImapHeader } from './imap/client'
 import { MISSING_FOLDER, withImap, resolveFolderName } from './mail/imap'
 import { applyAccountLabel, applyFilters } from './filters'
 import { archiveUpdateStatement } from './mail/archive-update'
+import {
+  normalizeMessageId,
+  normalizeSubject,
+  referenceIds,
+  threadKeyFor,
+} from './mail/thread-key'
 import { archiveStorageCandidates, getImapArchiveStorage } from './storage'
 import { imapMessageId } from './mail/ids'
 import { bodyText, dateOf, parseFull, parseHeaders, toMailbox, toMailboxes } from './mail/parse'
@@ -54,6 +60,7 @@ export interface ImapMessageRow {
   uid_validity: number | null
   stable_key: string
   message_id: string | null
+  thread_key: string | null
   from_name: string | null
   from_email: string
   to_json: string
@@ -153,6 +160,7 @@ export function imapMessageSummary(row: ImapMessageRow, account: AccountRow): Me
     hasAttachments: Boolean(row.has_attachments),
     status: row.folder === 'draft' ? 'draft' : 'sent',
     labelIds: [],
+    threadKey: row.thread_key ?? null,
   }
 }
 
@@ -483,6 +491,193 @@ async function backfillSnippets(
   return indexed
 }
 
+interface ThreadCandidate {
+  id: string
+  stableKey: string
+  messageId: string | null
+  inReplyTo: string | null
+  references: string | null
+  subject: string | null
+}
+
+/**
+ * Conversation keys for a batch of messages.
+ *
+ * The parent row is looked up by `stable_key` (`mid:<message-id>`, indexed) in
+ * both the raw and the bracket-less form, because providers disagree on how they
+ * keep the header. A parent that has no key yet is a legacy row: its own
+ * Message-ID becomes the root and it is repaired in the same batch, so old mail
+ * joins the conversation without a rescan.
+ */
+async function resolveThreadKeys(
+  env: Env,
+  accountId: string,
+  candidates: ThreadCandidate[],
+): Promise<Map<string, string>> {
+  const keys = new Map<string, string>()
+  if (candidates.length === 0) {
+    return keys
+  }
+
+  const variantsFor = (candidate: ThreadCandidate): string[] => {
+    const raw = referenceIds(candidate.references)[0]
+    const parent = candidate.inReplyTo?.trim()
+    const values: string[] = []
+    for (const value of [raw, parent]) {
+      if (!value) {
+        continue
+      }
+      const lower = value.toLowerCase()
+      values.push(`mid:${lower}`, `mid:${normalizeMessageId(lower)}`)
+    }
+    return values
+  }
+
+  const wanted = new Set<string>()
+  for (const candidate of candidates) {
+    for (const variant of variantsFor(candidate)) {
+      wanted.add(variant)
+    }
+  }
+
+  const parents = new Map<
+    string,
+    { stableKey: string; threadKey: string | null; messageId: string | null }
+  >()
+  const list = [...wanted].slice(0, 100)
+  if (list.length > 0) {
+    const placeholders = list.map(() => '?').join(', ')
+    const rows = await env.DB.prepare(
+      `SELECT stable_key, thread_key, message_id FROM imap_messages WHERE account_id = ? AND stable_key IN (${placeholders})`,
+    )
+      .bind(accountId, ...list)
+      .all<{ stable_key: string; thread_key: string | null; message_id: string | null }>()
+    for (const row of rows.results) {
+      parents.set(row.stable_key, {
+        stableKey: row.stable_key,
+        threadKey: row.thread_key ?? null,
+        messageId: row.message_id,
+      })
+    }
+  }
+
+  // A reply that lost its References still shares the subject of its thread: use
+  // the conversation already stored for that subject, the way Gmail does.
+  const subjectKeys = new Map<string, string>()
+  const subjects = new Set<string>()
+  for (const candidate of candidates) {
+    const normalized = normalizeSubject(candidate.subject)
+    if (!normalized) {
+      continue
+    }
+    subjects.add(normalized)
+    subjects.add((candidate.subject ?? '').trim().toLowerCase())
+  }
+  const subjectList = [...subjects].slice(0, 100)
+  if (subjectList.length > 0) {
+    const placeholders = subjectList.map(() => '?').join(', ')
+    const rows = await env.DB.prepare(
+      `SELECT subject, COALESCE(thread_key, stable_key) AS key FROM imap_messages
+       WHERE account_id = ? AND lower(subject) IN (${placeholders})`,
+    )
+      .bind(accountId, ...subjectList)
+      .all<{ subject: string; key: string }>()
+    for (const row of rows.results) {
+      const normalized = normalizeSubject(row.subject)
+      if (normalized && !subjectKeys.has(normalized)) {
+        subjectKeys.set(normalized, row.key)
+      }
+    }
+  }
+
+  const repairs = new Map<string, string>()
+  for (const candidate of candidates) {
+    const variants = variantsFor(candidate)
+    const parent = variants.map((variant) => parents.get(variant)).find(Boolean) ?? null
+    const legacyRoot =
+      parent && !parent.threadKey ? normalizeMessageId(parent.messageId) : null
+    if (parent && !parent.threadKey && legacyRoot) {
+      repairs.set(parent.stableKey, legacyRoot)
+    }
+    const subjectKey = parent ? null : subjectKeys.get(normalizeSubject(candidate.subject)) ?? null
+    keys.set(
+      candidate.id,
+      threadKeyFor({
+        messageId: candidate.messageId,
+        inReplyTo: candidate.inReplyTo,
+        references: candidate.references,
+        parentKey: parent?.threadKey ?? legacyRoot ?? subjectKey,
+        fallback: candidate.stableKey,
+      }),
+    )
+  }
+
+  if (repairs.size > 0) {
+    await env.DB.batch(
+      [...repairs].map(([stableKey, key]) =>
+        env.DB.prepare(
+          'UPDATE imap_messages SET thread_key = ? WHERE account_id = ? AND stable_key = ? AND thread_key IS NULL',
+        ).bind(key, accountId, stableKey),
+      ),
+    )
+  }
+  return keys
+}
+
+/**
+ * Rows mirrored before threading existed have no key. Reading their headers (not
+ * the bodies) is enough to place them, a few per sync run.
+ */
+export async function backfillThreadKeys(
+  env: Env,
+  connection: ImapConnection,
+  account: AccountRow,
+  folder: Folder,
+  limit = 10,
+): Promise<number> {
+  const pending = await env.DB.prepare(
+    `SELECT id, uid, stable_key, message_id FROM imap_messages
+     WHERE account_id = ? AND folder = ? AND thread_key IS NULL
+     ORDER BY uid DESC LIMIT ?`,
+  )
+    .bind(account.id, folder, limit)
+    .all<{ id: string; uid: number; stable_key: string; message_id: string | null }>()
+  if (pending.results.length === 0) {
+    return 0
+  }
+  const headers = await connection.fetchHeaders(pending.results.map((row) => row.uid))
+  const byUid = new Map(headers.map((header) => [header.uid, header.header]))
+  const candidates: ThreadCandidate[] = []
+  for (const row of pending.results) {
+    const raw = byUid.get(row.uid)
+    if (!raw) {
+      continue
+    }
+    const email = await parseHeaders(raw)
+    candidates.push({
+      id: row.id,
+      stableKey: row.stable_key,
+      messageId: email.messageId ?? row.message_id,
+      inReplyTo: email.inReplyTo ?? null,
+      references: email.references ?? null,
+      subject: email.subject ?? null,
+    })
+  }
+  const keys = await resolveThreadKeys(env, account.id, candidates)
+  if (keys.size === 0) {
+    return 0
+  }
+  await env.DB.batch(
+    [...keys].map(([id, key]) =>
+      env.DB.prepare('UPDATE imap_messages SET thread_key = ? WHERE id = ? AND thread_key IS NULL').bind(
+        key,
+        id,
+      ),
+    ),
+  )
+  return keys.size
+}
+
 const SYNC_LOCK_TTL_MS = 5 * 60 * 1000
 
 interface SyncLock {
@@ -705,6 +900,8 @@ async function runSyncChunkLocked(
         id: string
         stableKey: string
         folder: Folder
+        inReplyTo: string | null
+        references: string | null
       }[] = []
       for (const header of headers) {
         const email = await parseHeaders(header.header)
@@ -716,6 +913,8 @@ async function runSyncChunkLocked(
           id,
           stableKey: key,
           folder,
+          inReplyTo: email.inReplyTo ?? null,
+          references: email.references ?? null,
           row: {
             id,
             account_id: account.id,
@@ -724,6 +923,7 @@ async function runSyncChunkLocked(
             uid_validity: details.uidValidity,
             stable_key: key,
             message_id: email.messageId ?? null,
+            thread_key: null,
             from_name: from.name,
             from_email: from.email,
             to_json: JSON.stringify(toMailboxes(email.to)),
@@ -750,12 +950,27 @@ async function runSyncChunkLocked(
       }
 
       if (parsed.length > 0) {
+        const threadKeys = await resolveThreadKeys(
+          env,
+          account.id,
+          parsed.map((item) => ({
+            id: item.id,
+            stableKey: item.stableKey,
+            messageId: item.row.message_id,
+            inReplyTo: item.inReplyTo,
+            references: item.references,
+            subject: item.row.subject,
+          })),
+        )
+        for (const item of parsed) {
+          item.row.thread_key = threadKeys.get(item.id) ?? item.stableKey
+        }
         await env.DB.batch(
           parsed.map((item) =>
             env.DB.prepare(
-              `INSERT INTO imap_messages (id, account_id, folder, uid, uid_validity, stable_key, message_id, from_name, from_email, to_json, cc_json, bcc_json, subject, snippet, sent_at, size, unread, has_attachments, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET uid_validity = excluded.uid_validity, stable_key = excluded.stable_key, message_id = excluded.message_id, from_name = excluded.from_name, from_email = excluded.from_email, to_json = excluded.to_json, cc_json = excluded.cc_json, bcc_json = excluded.bcc_json, subject = excluded.subject, snippet = excluded.snippet, sent_at = excluded.sent_at, size = excluded.size, unread = excluded.unread, has_attachments = excluded.has_attachments, updated_at = excluded.updated_at`,
+              `INSERT INTO imap_messages (id, account_id, folder, uid, uid_validity, stable_key, message_id, thread_key, from_name, from_email, to_json, cc_json, bcc_json, subject, snippet, sent_at, size, unread, has_attachments, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET uid_validity = excluded.uid_validity, stable_key = excluded.stable_key, message_id = excluded.message_id, thread_key = coalesce(excluded.thread_key, imap_messages.thread_key), from_name = excluded.from_name, from_email = excluded.from_email, to_json = excluded.to_json, cc_json = excluded.cc_json, bcc_json = excluded.bcc_json, subject = excluded.subject, snippet = excluded.snippet, sent_at = excluded.sent_at, size = excluded.size, unread = excluded.unread, has_attachments = excluded.has_attachments, updated_at = excluded.updated_at`,
             ).bind(
               item.row.id,
               item.row.account_id,
@@ -764,6 +979,7 @@ async function runSyncChunkLocked(
               item.row.uid_validity,
               item.row.stable_key,
               item.row.message_id,
+              item.row.thread_key,
               item.row.from_name,
               item.row.from_email,
               item.row.to_json,
@@ -894,6 +1110,7 @@ async function runSyncChunkLocked(
 
     await renewSyncLock(env, account.id, folder, lock)
     indexedSnippets = await backfillSnippets(env, connection, account, folder)
+    await backfillThreadKeys(env, connection, account, folder).catch(() => 0)
 
     let hasOlder = false
     if (!backfillDone) {
