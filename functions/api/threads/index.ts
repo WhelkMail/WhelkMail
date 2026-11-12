@@ -10,6 +10,7 @@ import type { Env } from '../../_lib/env'
 import { fail, json } from '../../_lib/http'
 import { isSchemaError } from '../../_lib/schema'
 import { getSyncState, imapMessageSummary, type ImapMessageRow } from '../../_lib/sync'
+import { needsBackgroundSync } from '../../_lib/sync-trigger'
 import {
   clampPageSize,
   compareByDateDesc,
@@ -100,39 +101,69 @@ async function accountThreads(
   ])
   groups.push(...imapRows.results, ...relayRows.results)
 
-  const keys = [...new Set(groups.map((group) => group.key))].slice(0, 60)
+  // Every conversation on the page is loaded: the cap is per thread (how much of
+  // its history is used for participants), never global, so a busy conversation
+  // cannot push another one out of the page.
+  const keys = [...new Set(groups.map((group) => group.key))]
   if (keys.length === 0) {
     return { groups: [], threads }
   }
   const placeholders = keys.map(() => '?').join(', ')
-  // The scoped query picks *which* conversations are on the page; the rows are
-  // then loaded from every folder of the account (drafts excluded), so a thread
-  // you already answered shows the reply too and the count is the real one — the
-  // same way Gmail counts the whole conversation in the Inbox.
-  const [imapMessages, relayMessages] = await Promise.all([
-    env.DB.prepare(
-      `SELECT * FROM imap_messages WHERE account_id = ? AND folder <> 'draft'
-       AND COALESCE(thread_key, stable_key) IN (${placeholders})
-     ORDER BY sent_at ASC LIMIT 600`,
-    )
-      .bind(account.id, ...keys)
-      .all<ImapMessageRow>(),
-    env.DB.prepare(
-      `SELECT * FROM messages WHERE account_id = ? AND folder <> 'draft'
-       AND COALESCE(thread_key, 'r:' || id) IN (${placeholders})
-     ORDER BY sent_at ASC LIMIT 600`,
-    )
-      .bind(account.id, ...keys)
-      .all<MessageRow>(),
-  ])
-  for (const row of imapMessages.results) {
-    const key = row.thread_key ?? row.stable_key
-    addThreadRow(threads, key, row, row.from_name, row.from_email, Boolean(row.unread))
-  }
+  const PER_THREAD = 40
+  const imapKey = 'COALESCE(thread_key, stable_key)'
+  const relayKey = "COALESCE(thread_key, 'r:' || id)"
 
+  const [imapMessages, relayMessages, imapCounts, relayCounts] = await Promise.all([
+    env.DB.prepare(
+      `SELECT * FROM (
+         SELECT *, ROW_NUMBER() OVER (PARTITION BY ${imapKey} ORDER BY sent_at DESC) AS rn
+         FROM imap_messages
+         WHERE account_id = ? AND folder <> 'draft' AND ${imapKey} IN (${placeholders})
+       ) WHERE rn <= ? ORDER BY sent_at ASC`,
+    )
+      .bind(account.id, ...keys, PER_THREAD)
+      .all<ImapMessageRow & { rn: number }>(),
+    env.DB.prepare(
+      `SELECT * FROM (
+         SELECT *, ROW_NUMBER() OVER (PARTITION BY ${relayKey} ORDER BY sent_at DESC) AS rn
+         FROM messages
+         WHERE account_id = ? AND folder <> 'draft' AND ${relayKey} IN (${placeholders})
+       ) WHERE rn <= ? ORDER BY sent_at ASC`,
+    )
+      .bind(account.id, ...keys, PER_THREAD)
+      .all<MessageRow & { rn: number }>(),
+    env.DB.prepare(
+      `SELECT ${imapKey} AS key, COUNT(*) AS total, COALESCE(SUM(unread), 0) AS unread
+       FROM imap_messages
+       WHERE account_id = ? AND folder <> 'draft' AND ${imapKey} IN (${placeholders})
+       GROUP BY key`,
+    )
+      .bind(account.id, ...keys)
+      .all<{ key: string; total: number; unread: number }>(),
+    env.DB.prepare(
+      `SELECT ${relayKey} AS key, COUNT(*) AS total, 0 AS unread
+       FROM messages
+       WHERE account_id = ? AND folder <> 'draft' AND ${relayKey} IN (${placeholders})
+       GROUP BY key`,
+    )
+      .bind(account.id, ...keys)
+      .all<{ key: string; total: number; unread: number }>(),
+  ])
+
+  for (const row of imapMessages.results) {
+    addThreadRow(threads, row.thread_key ?? row.stable_key, row, row.from_name, row.from_email, Boolean(row.unread))
+  }
   for (const row of relayMessages.results) {
-    const key = row.thread_key ?? `r:${row.id}`
-    addThreadRow(threads, key, row, row.from_name, row.from_email, false)
+    addThreadRow(threads, row.thread_key ?? `r:${row.id}`, row, row.from_name, row.from_email, false)
+  }
+  // Totals come from the whole conversation, independently of how much of it was
+  // loaded above.
+  for (const row of [...imapCounts.results, ...relayCounts.results]) {
+    const entry = threads.get(row.key)
+    if (entry) {
+      entry.messages = row.total
+      entry.unread = row.unread
+    }
   }
 
   return { groups, threads }
@@ -151,12 +182,8 @@ function addThreadRow(
   unread: boolean,
 ): void {
   const entry =
-    threads.get(key) ?? { latest: row, participants: [], participantCount: 0, messages: 0, unread: 0 }
+    threads.get(key) ?? { latest: row, participants: [], participantCount: 0, messages: 0, unread: unread ? 1 : 0 }
   entry.latest = row
-  entry.messages += 1
-  if (unread) {
-    entry.unread += 1
-  }
   const known = entry.participants.some(
     (item) => item.email.toLowerCase() === (email ?? '').toLowerCase(),
   )
@@ -233,15 +260,21 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const perAccount = await Promise.all(
     accounts.map(async (account) => {
       try {
+        let accountSyncing = false
+        let accountStale = false
         if (scope.kind === 'folder') {
-          // Only report: this path never opens an IMAP connection, so opening a
-          // folder cannot hang behind a sync. Fetching is left to auto-sync and
-          // to the cron worker.
           const state = await getSyncState(context.env, account.id, scope.folder)
-          syncing = state?.status === 'partial'
+          accountSyncing = state?.status === 'partial'
+          accountStale = needsBackgroundSync(state)
         }
         const loaded = await accountThreads(context.env, account, scope, limit, before)
-        return { account, loaded, error: null as string | null }
+        return {
+          account,
+          loaded,
+          syncing: accountSyncing,
+          stale: accountStale,
+          error: null as string | null,
+        }
       } catch (error) {
         if (isSchemaError(error)) {
           throw error
@@ -249,11 +282,22 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         return {
           account,
           loaded: null,
+          syncing: false,
+          stale: false,
           error: error instanceof Error ? error.message : 'Errore',
         }
       }
     }),
   )
+
+  // Each account reports its own state: a shared variable let the last account
+  // overwrite the others, so a running sync could look finished.
+  syncing = perAccount.some((result) => result.syncing)
+  // Folders whose mirror is old. The browser asks for a sync *after* the list is
+  // on screen: doing that here kept the response waiting behind IMAP work.
+  const staleAccounts = scope.kind === 'folder'
+    ? perAccount.filter((result) => result.stale).map((result) => result.account.id)
+    : []
 
   for (const result of perAccount) {
     const account = result.account
@@ -279,6 +323,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
             : relayMessageSummary(row as MessageRow, account)
         threads.push({
           threadKey: group.key,
+          lastAt: group.last_at,
           accountId: account.id,
           accountEmail: account.email,
           accountName: account.display_name,
@@ -314,16 +359,21 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     thread.latest.labelIds = labels.get(thread.latest.id) ?? []
   }
 
-  threads.sort((left, right) => compareByDateDesc(left.latest, right.latest))
+  // Same pair as the SQL ORDER BY (last_at DESC, key DESC) and as the cursor,
+  // otherwise conversations sharing a timestamp could repeat or vanish between
+  // pages.
+  threads.sort((left, right) =>
+    compareByDateDesc({ date: left.lastAt, id: left.threadKey }, { date: right.lastAt, id: right.threadKey }),
+  )
   const page = threads.slice(0, limit)
   const last = page[page.length - 1]
   const nextCursor =
     threads.length > limit && last
-      ? encodePageCursor({ date: last.latest.date, id: last.threadKey })
+      ? encodePageCursor({ date: last.lastAt, id: last.threadKey })
       : null
 
   console.log(
     `[threads] accounts=${accounts.length} folder=${labelId ? 'label' : folder} rows=${threads.length} page=${page.length} ms=${Date.now() - startedAt}`,
   )
-  return json({ threads: page, errors, syncing, nextCursor })
+  return json({ threads: page, errors, syncing, staleAccounts, nextCursor })
 }

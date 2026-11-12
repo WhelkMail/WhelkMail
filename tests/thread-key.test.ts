@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isReplySubject,
   mergeThreadsBySubject,
   normalizeMessageId,
   normalizeSubject,
@@ -94,5 +95,31 @@ describe('mergeThreadsBySubject', () => {
       { id: 'c', subject: '', threadKey: null, sentAt: '2026-01-03T10:00:00.000Z' },
     ]
     expect(mergeThreadsBySubject(rows).size).toBe(0)
+  })
+})
+
+describe('subject matching stays conservative', () => {
+  it('recognises the reply prefixes', () => {
+    expect(isReplySubject('Re: Fattura 12')).toBe(true)
+    expect(isReplySubject('R: Fattura 12')).toBe(true)
+    expect(isReplySubject('AW: Angebot')).toBe(true)
+    expect(isReplySubject('Fattura 12')).toBe(false)
+    expect(isReplySubject(null)).toBe(false)
+  })
+
+  it('leaves two unrelated mails with the same subject alone', () => {
+    const rows = [
+      { id: 'a', subject: 'Fattura 12', threadKey: 'mid-a@x', sentAt: '2026-01-01T10:00:00.000Z' },
+      { id: 'b', subject: 'Fattura 12', threadKey: 'mid-b@x', sentAt: '2026-01-02T10:00:00.000Z' },
+    ]
+    expect(mergeThreadsBySubject(rows).size).toBe(0)
+  })
+
+  it('merges a reply into the original it belongs to', () => {
+    const rows = [
+      { id: 'a', subject: 'Fattura 12', threadKey: 'mid-a@x', sentAt: '2026-01-01T10:00:00.000Z' },
+      { id: 'b', subject: 'Re: Fattura 12', threadKey: 'mid-b@x', sentAt: '2026-01-02T10:00:00.000Z' },
+    ]
+    expect([...mergeThreadsBySubject(rows)]).toEqual([['b', 'mid-a@x']])
   })
 })

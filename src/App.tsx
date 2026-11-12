@@ -115,6 +115,37 @@ function routeUrl(route: MailRoute): string {
   return route.messageId ? `${base}/${encodeURIComponent(route.messageId)}${suffix}` : `${base}${suffix}`
 }
 
+/**
+ * Sync requested by the browser, after the list is already on screen.
+ *
+ * Doing this on the server (waitUntil) put IMAP work on the same request that
+ * had to answer with the list, which is what made the inbox appear to hang.
+ */
+const recentSyncRequests = new Map<string, number>()
+
+function requestSyncAfterPaint(
+  accounts: string[] | undefined,
+  folder: Folder,
+  alreadySyncing: boolean | undefined,
+): void {
+  if (!accounts || accounts.length === 0) {
+    return
+  }
+  if (alreadySyncing) {
+    return
+  }
+  const now = Date.now()
+  for (const accountId of accounts.slice(0, 3)) {
+    const key = `${accountId}:${folder}`
+    const last = recentSyncRequests.get(key) ?? 0
+    if (now - last < 60_000) {
+      continue
+    }
+    recentSyncRequests.set(key, now)
+    void api.runSync(accountId, folder).catch(() => undefined)
+  }
+}
+
 export default function App() {
   const { t } = useI18n()
   const tRef = useRef(t)
@@ -347,6 +378,11 @@ export default function App() {
     if (auth !== 'ok') {
       return
     }
+    // Settings and Contacts do not need the mail list: fetching it there was pure
+    // load (and could compete with the panels' requests).
+    if (view !== 'mail') {
+      return
+    }
     let cancelled = false
     const requestStartedAt = performance.now()
     console.log(
@@ -358,6 +394,7 @@ export default function App() {
         console.log(
           `[list] folder=${folder} account=${selectedAccountId} threads=${response.threads.length} syncing=${Boolean(response.syncing)} ms=${Math.round(performance.now() - requestStartedAt)}`,
         )
+        requestSyncAfterPaint(response.staleAccounts, folder, response.syncing)
         return {
           messages: response.threads.map(threadSummary),
           nextCursor: response.nextCursor,

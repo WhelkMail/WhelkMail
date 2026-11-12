@@ -30,9 +30,11 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
   const messages: MessageSummary[] = []
   try {
+    // The list groups by `COALESCE(thread_key, stable_key)`, so rows without a key
+    // (history mirrored before threading) must be found the same way here.
     const imap = await context.env.DB.prepare(
       `SELECT * FROM imap_messages
-       WHERE account_id = ? AND thread_key = ? AND folder <> 'draft'
+       WHERE account_id = ? AND COALESCE(thread_key, stable_key) = ? AND folder <> 'draft'
        ORDER BY sent_at ASC`,
     )
       .bind(account.id, threadKey)
@@ -41,7 +43,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
     const relay = await context.env.DB.prepare(
       `SELECT * FROM messages
-       WHERE account_id = ? AND thread_key = ? AND folder <> 'draft'
+       WHERE account_id = ? AND COALESCE(thread_key, 'r:' || id) = ? AND folder <> 'draft'
        ORDER BY sent_at ASC`,
     )
       .bind(account.id, threadKey)

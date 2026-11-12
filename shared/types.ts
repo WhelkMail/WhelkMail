@@ -132,6 +132,8 @@ export interface MailThread {
   folder: Folder
   /** Newest message of the conversation in this folder. */
   latest: MessageSummary
+  /** Date used for ordering and for the cursor (same value as the SQL MAX). */
+  lastAt: string
   total: number
   unread: number
   /** Distinct senders, oldest first: the list shows them Gmail-style. */
@@ -141,8 +143,10 @@ export interface MailThread {
 export interface ThreadListResult {
   threads: MailThread[]
   errors: { accountId: string; email: string; message: string }[]
-  /** A background sync was scheduled: the client polls and refreshes. */
+  /** A background sync is running (state reported by the sync lock). */
   syncing?: boolean
+  /** Accounts whose mirror is stale: the client asks for a sync after painting. */
+  staleAccounts?: string[]
   nextCursor: string | null
 }
 

@@ -96,6 +96,11 @@ export interface SubjectThreadRow {
  * it belongs to. The oldest message of the group keeps its key, the others adopt
  * it, so nothing has to be recomputed twice.
  */
+/** Whether the subject carries a reply/forward prefix. */
+export function isReplySubject(subject: string | null | undefined): boolean {
+  return Boolean(subject) && /^\s*(re|r|aw|sv|vs|rif|fwd|fw|i)\s*(\[\d+\])?\s*:/i.test(subject ?? '')
+}
+
 export function mergeThreadsBySubject(rows: SubjectThreadRow[]): Map<string, string> {
   const updates = new Map<string, string>()
   const bySubject = new Map<string, SubjectThreadRow[]>()
@@ -112,6 +117,11 @@ export function mergeThreadsBySubject(rows: SubjectThreadRow[]): Map<string, str
 
   for (const bucket of bySubject.values()) {
     if (bucket.length < 2) {
+      continue
+    }
+    // Only a reply joins a conversation through its subject. Two unrelated mails
+    // that happen to share a subject ("Fattura 12") keep their own threads.
+    if (!bucket.some((row) => isReplySubject(row.subject))) {
       continue
     }
     bucket.sort((left, right) => left.sentAt.localeCompare(right.sentAt))

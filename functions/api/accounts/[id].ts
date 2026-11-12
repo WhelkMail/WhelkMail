@@ -266,7 +266,18 @@ export const onRequestDelete: PagesFunction<Env> = async (context) => {
       )
     }
   }
-  const purgeFailures = await purgeAccountStorage(context.env, row).catch(() => [])
+  let purgeFailures
+  try {
+    purgeFailures = await purgeAccountStorage(context.env, row)
+  } catch (error) {
+    // Nothing is deleted: the cleanup could not even read what it has to remove.
+    return fail(
+      'Could not clean up the stored copies, account not deleted',
+      503,
+      error instanceof Error ? error.message : 'storage cleanup failed',
+      'purge_failed',
+    )
+  }
   if (purgeFailures.length > 0) {
     await recordCleanupFailures(context.env, { id: row.id, email: row.email }, purgeFailures).catch(
       () => undefined,

@@ -53,9 +53,9 @@ export class ApiError extends Error {
 
 /** Requests that feed the list give up instead of hanging the UI. */
 function listSignal(ms = 20_000): AbortSignal {
-  const controller = new AbortController()
-  setTimeout(() => controller.abort(), ms)
-  return controller.signal
+  // AbortSignal.timeout needs no manual cleanup: a plain setTimeout stayed alive
+  // for 20 seconds after every fast response.
+  return AbortSignal.timeout(ms)
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

@@ -13,6 +13,7 @@ import { MISSING_FOLDER, withImap, resolveFolderName } from './mail/imap'
 import { applyAccountLabel, applyFilters } from './filters'
 import { archiveUpdateStatement } from './mail/archive-update'
 import {
+  isReplySubject,
   normalizeMessageId,
   normalizeSubject,
   referenceIds,
@@ -590,7 +591,43 @@ async function resolveThreadKeys(
     }
   }
 
+  // A reply can answer a message the app sent: that copy lives in `messages`,
+  // not in the mirror, so the conversation of the original has to be found there.
+  const relayParents = new Map<string, { id: string; threadKey: string | null; messageId: string | null }>()
+  const wantedParents = [
+    ...new Set(
+      candidates
+        .map(
+          (candidate) =>
+            normalizeMessageId(candidate.inReplyTo) ||
+            normalizeMessageId(referenceIds(candidate.references)[0]),
+        )
+        .filter(Boolean),
+    ),
+  ].slice(0, 100)
+  if (wantedParents.length > 0) {
+    const placeholders = wantedParents.map(() => '?').join(', ')
+    const rows = await env.DB.prepare(
+      `SELECT id, message_id, thread_key FROM messages
+       WHERE account_id = ?
+         AND lower(replace(replace(message_id, '<', ''), '>', '')) IN (${placeholders})`,
+    )
+      .bind(accountId, ...wantedParents)
+      .all<{ id: string; message_id: string | null; thread_key: string | null }>()
+    for (const row of rows.results) {
+      const normalized = normalizeMessageId(row.message_id)
+      if (normalized) {
+        relayParents.set(normalized, {
+          id: row.id,
+          threadKey: row.thread_key ?? null,
+          messageId: row.message_id,
+        })
+      }
+    }
+  }
+
   const repairs = new Map<string, string>()
+  const relayRepairs = new Map<string, string>()
   for (const candidate of candidates) {
     const variants = variantsFor(candidate)
     const parent = variants.map((variant) => parents.get(variant)).find(Boolean) ?? null
@@ -599,14 +636,30 @@ async function resolveThreadKeys(
     if (parent && !parent.threadKey && legacyRoot) {
       repairs.set(parent.stableKey, legacyRoot)
     }
-    const subjectKey = parent ? null : subjectKeys.get(normalizeSubject(candidate.subject)) ?? null
+    // Subject matching is the fallback for replies that lost their headers: it
+    // must not merge an unrelated message that shares a generic subject.
+    const subjectKey =
+      parent || !isReplySubject(candidate.subject)
+        ? null
+        : subjectKeys.get(normalizeSubject(candidate.subject)) ?? null
+    const relayParent = parent
+      ? null
+      : relayParents.get(
+          normalizeMessageId(candidate.inReplyTo) ||
+            normalizeMessageId(referenceIds(candidate.references)[0]),
+        ) ?? null
+    const relayRoot =
+      relayParent && !relayParent.threadKey ? normalizeMessageId(relayParent.messageId) : null
+    if (relayParent && !relayParent.threadKey && relayRoot) {
+      relayRepairs.set(relayParent.id, relayRoot)
+    }
     keys.set(
       candidate.id,
       threadKeyFor({
         messageId: candidate.messageId,
         inReplyTo: candidate.inReplyTo,
         references: candidate.references,
-        parentKey: parent?.threadKey ?? legacyRoot ?? subjectKey,
+        parentKey: parent?.threadKey ?? legacyRoot ?? relayParent?.threadKey ?? relayRoot ?? subjectKey,
         fallback: candidate.stableKey,
       }),
     )
@@ -618,6 +671,16 @@ async function resolveThreadKeys(
         env.DB.prepare(
           'UPDATE imap_messages SET thread_key = ? WHERE account_id = ? AND stable_key = ? AND thread_key IS NULL',
         ).bind(key, accountId, stableKey),
+      ),
+    )
+  }
+  if (relayRepairs.size > 0) {
+    await env.DB.batch(
+      [...relayRepairs].map(([id, key]) =>
+        env.DB.prepare('UPDATE messages SET thread_key = ? WHERE id = ? AND thread_key IS NULL').bind(
+          key,
+          id,
+        ),
       ),
     )
   }

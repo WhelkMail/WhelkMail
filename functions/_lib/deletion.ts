@@ -115,28 +115,54 @@ export async function purgeAccountStorage(env: Env, account: AccountRow): Promis
       messages.results.map((row) => ({ driver: row.storage_driver, key: row.storage_key })),
       archived.results.map((row) => ({ driver: row.archive_driver, key: row.archive_key })),
     )
-  } catch {
-    return failures
+  } catch (error) {
+    // Without the rows we cannot know what to clean: fail loudly so the account
+    // is not deleted while its objects stay on Drive/R2 untracked.
+    throw error
   }
 
   for (const [driver, keys] of plan.copies) {
     let storage
     try {
       storage = storageForDriver(env, account, driver)
-    } catch {
+    } catch (error) {
+      recordUnavailable(failures, driver, keys, error)
       continue
     }
-    if (storage) {
-      await removeKeys(storage, driver, keys, failures)
+    if (!storage) {
+      recordUnavailable(failures, driver, keys, new Error('storage backend not available'))
+      continue
     }
+    await removeKeys(storage, driver, keys, failures)
   }
   for (const [driver, keys] of plan.archives) {
-    const storage = archiveStorageForDriver(env, account, driver)
-    if (storage) {
-      await removeKeys(storage, driver, keys, failures)
+    let storage
+    try {
+      storage = archiveStorageForDriver(env, account, driver)
+    } catch (error) {
+      recordUnavailable(failures, driver, keys, error)
+      continue
     }
+    if (!storage) {
+      recordUnavailable(failures, driver, keys, new Error('archive backend not available'))
+      continue
+    }
+    await removeKeys(storage, driver, keys, failures)
   }
   return failures
+}
+
+/** Every object of a backend that cannot even be reached is a leftover too. */
+function recordUnavailable(
+  failures: PurgeFailure[],
+  driver: string,
+  keys: Set<string>,
+  error: unknown,
+): void {
+  const message = error instanceof Error ? error.message : String(error)
+  for (const key of keys) {
+    failures.push({ driver, key, error: message })
+  }
 }
 
 async function removeKeys(
