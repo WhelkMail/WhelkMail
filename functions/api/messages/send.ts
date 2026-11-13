@@ -206,7 +206,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           account.sent_folder = appended.folder
         }
       } catch (error) {
-        warning = `Messaggio inviato, ma la copia in ${account.sent_folder} non è stata salvata: ${
+        warning = `Message sent, but the copy in ${account.sent_folder} wasn't saved: ${
           error instanceof Error ? error.message : 'IMAP error'
         }`
       }
