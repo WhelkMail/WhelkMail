@@ -51,7 +51,7 @@ Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a fam
 - Password, app-password, Google OAuth2 and Microsoft OAuth2 (XOAUTH2) authentication.
 - Sending through each account's own SMTP server.
 - **Replies from the right address**: when a domain only forwards to a provider mailbox (`EMAIL@DOMAIN.IT` → `EMAIL@PROVIDER.IT`), a reply leaves from the domain account automatically — the app matches the message's To/Cc and forwarding headers (`Delivered-To`, `X-Original-To`, `Envelope-To`, `Received … for`) against its accounts. Settings → Accounts → **Reply as** forces a different sender for a mailbox.
-- Send-only "relay" accounts (SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark, Cloudflare Email Service or a custom SMTP server with manual host/port/credentials) for domains without SMTP. Sent copies and drafts go to Google Drive, Cloudflare R2, or the Sent/Drafts folders of an IMAP account you already read — pick one destination per account.
+- Send-only "relay" accounts (SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark, Cloudflare Email Service or a custom SMTP server with manual host/port/credentials) for domains without SMTP. Sent copies and drafts go to Google Drive, Cloudflare R2, or the Sent/Drafts folders of an IMAP account you already read — pick one destination per account. Cloudflare Email Service is **experimental**: see [Limitations](#limitations).
 - Optional archive and provider cleanup for IMAP: archive bodies and attachments, then move the original to the provider Trash.
 
 ### Organization
@@ -219,6 +219,7 @@ Relay credentials can also be entered per account in the UI and are encrypted at
 - Login rate limiting is per IP and best-effort, not a substitute for Cloudflare Access or a WAF.
 - Account deletion removes D1 rows and makes a best-effort cleanup of R2/Drive objects referenced in D1 (grouped per driver, so objects written before a destination change are found); it never deletes mail from the provider. Objects that cannot be removed (for example a revoked Drive token) are listed in Settings → System → “Objects left behind”, because the account credentials are gone by then and a retry is impossible. Deleting a mailbox that stores the sent copies of a send-only account needs a second confirmation, because those copies stay on the provider but their attachments and `.eml` stop being reachable from the app.
 - Provider error details are returned to the authenticated admin to help with IMAP/SMTP setup.
+- **Cloudflare Email Service is experimental.** The maintainer has not run it against a real Cloudflare account, so actual delivery, suppression handling (error `10205`), rate limits and the per-recipient failures the app reports are unverified. Use SMTP2GO or another listed relay when you need a path that has been tested in practice.
 - Workers Paid is recommended because IMAP/SMTP TLS handshakes could exceed the free plan CPU budget.
 - Google OAuth uses the restricted `https://mail.google.com/` scope. A public production app needs Google verification (CASA); personal/testing apps can use OAuth in Testing mode, where refresh tokens expire after 7 days. App passwords remain available as an alternative.
 

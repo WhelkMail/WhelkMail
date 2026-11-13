@@ -333,6 +333,8 @@ Supported providers: SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmar
 
 **Cloudflare Email Service** ([docs](https://developers.cloudflare.com/email-service/api/send-emails/rest-api/)):
 
+> **Experimental.** The maintainer has not tested this provider against a real Cloudflare account. The steps below follow the documented REST API, but actual delivery, suppression handling and rate limits are unverified: treat it as a preview and keep a tested relay for mail you care about.
+
 - API key: an account API token with the **Email Sending: Edit** permission.
 - Account ID: your Cloudflare account ID (dashboard → account home, or the URL after `dash.cloudflare.com/`).
 - The sending domain must be onboarded under **Email Service → Email Sending** in the same account. Each subdomain is onboarded separately.

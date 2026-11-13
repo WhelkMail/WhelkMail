@@ -11,7 +11,7 @@ WhelkMail is a **webmail client**, not a mail server.
 - It connects to existing mailboxes through IMAP and SMTP.
 - It does not receive mail directly, does not run an MTA, and does not listen on ports 25/143/993/465/587.
 - It does not create mailboxes. Thunderbird and mobile clients can keep connecting to the same provider independently.
-- For domains with no SMTP, a separate **relay account** type sends through an HTTP email API and keeps sent copies/drafts on Google Drive, Cloudflare R2 or in the Sent/Drafts folders of another IMAP account.
+- For domains with no SMTP, a separate **relay account** type sends through an HTTP email API and keeps sent copies/drafts on Google Drive, Cloudflare R2 or in the Sent/Drafts folders of another IMAP account. Cloudflare Email Service is available as an experimental relay: the maintainer has not verified it against a real Cloudflare account.
 
 ## 2. Architecture
 
@@ -596,6 +596,7 @@ Pages → Custom domains → add the domain and follow the DNS instructions. Aft
 - No per-user isolation or audit log. Login and 2FA rate limiting are present but per-IP only.
 - Generic API errors include a stable `code`; the UI translates it. Provider details (for example IMAP or relay responses) are shown to the authenticated admin to help debugging and are not exposed on public endpoints.
 - Attachment indicators in lists come from `BODYSTRUCTURE`. The newest bodies are prefetched in the background and cached; other bodies are downloaded when a message is opened.
+- The Cloudflare Email Service relay is experimental: the maintainer has not exercised it against a real Cloudflare account, so delivery, suppression handling (error `10205`), rate limits and per-recipient reporting are unverified. The code follows Cloudflare's documented REST API; use another relay for mail that must be delivered reliably.
 
 ## 18. License
 
