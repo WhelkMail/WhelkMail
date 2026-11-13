@@ -125,7 +125,7 @@ export async function getRelay(env: Env, account?: AccountRow): Promise<RelayAda
     case 'cloudflare':
       // The account ID lives in relay_domain (see the 'cloudflare' preset).
       if (!account?.relay_domain) {
-        throw new Error('Account ID Cloudflare non configurato')
+        throw new Error('Cloudflare account ID is not configured')
       }
       return new CloudflareRelay(key, account.relay_domain)
     default:
