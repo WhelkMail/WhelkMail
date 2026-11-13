@@ -3,6 +3,7 @@ import type { AccountRow } from '../db'
 import type { Env } from '../env'
 import type { SmtpSecurity } from '../smtp/client'
 import { BrevoRelay } from './brevo'
+import { CloudflareRelay } from './cloudflare'
 import { CustomSmtpRelay } from './custom'
 import { MailgunRelay } from './mailgun'
 import { MailjetRelay } from './mailjet'
@@ -23,6 +24,7 @@ const LABELS: Record<string, string> = {
   mailjet: 'Mailjet',
   postmark: 'Postmark',
   custom: 'Custom SMTP',
+  cloudflare: 'Cloudflare Email Service',
 }
 
 const MAX_ATTACHMENT_BYTES: Record<string, number> = {
@@ -34,6 +36,7 @@ const MAX_ATTACHMENT_BYTES: Record<string, number> = {
   mailjet: 12 * 1024 * 1024,
   postmark: 15 * 1024 * 1024,
   custom: 15 * 1024 * 1024,
+  cloudflare: 15 * 1024 * 1024,
 }
 
 export interface RelayInfo {
@@ -119,6 +122,12 @@ export async function getRelay(env: Env, account?: AccountRow): Promise<RelayAda
       return new MailjetRelay(key, secret)
     case 'postmark':
       return new PostmarkRelay(key)
+    case 'cloudflare':
+      // The account ID lives in relay_domain (see the 'cloudflare' preset).
+      if (!account?.relay_domain) {
+        throw new Error('Account ID Cloudflare non configurato')
+      }
+      return new CloudflareRelay(key, account.relay_domain)
     default:
       throw new Error(`Unsupported relay provider: ${provider}`)
   }
