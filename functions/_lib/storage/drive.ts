@@ -30,7 +30,7 @@ export class DriveStorage implements StorageAdapter {
       return decryptString(this.env, this.row.drive_access_token_enc)
     }
     if (!this.row.drive_refresh_token_enc) {
-      throw new Error('Google Drive non connesso per questo account')
+      throw new Error('Google Drive is not connected for this account')
     }
     const refreshToken = await decryptString(this.env, this.row.drive_refresh_token_enc)
     const token = await refreshAccessToken(this.env, refreshToken)
@@ -84,7 +84,7 @@ export class DriveStorage implements StorageAdapter {
     )
     const result = (await response.json()) as DriveFile
     if (!response.ok || !result.id) {
-      throw new Error(result.error?.message ?? 'Upload su Google Drive fallito')
+      throw new Error(result.error?.message ?? 'Google Drive upload failed')
     }
     return { key: result.id, size: data.byteLength }
   }
@@ -99,7 +99,7 @@ export class DriveStorage implements StorageAdapter {
       return null
     }
     if (!response.ok || !response.body) {
-      throw new Error(`Download da Google Drive fallito (${response.status})`)
+      throw new Error(`Google Drive download failed (${response.status})`)
     }
     return {
       body: response.body,
@@ -114,7 +114,7 @@ export class DriveStorage implements StorageAdapter {
       { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
     )
     if (!response.ok && response.status !== 404) {
-      throw new Error(`Eliminazione da Google Drive fallita (${response.status})`)
+      throw new Error(`Google Drive deletion failed (${response.status})`)
     }
   }
 }

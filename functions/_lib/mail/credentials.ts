@@ -27,7 +27,7 @@ export async function getMailCredentials(env: Env, account: AccountRow): Promise
       }
     }
     if (!account.secret_enc) {
-      throw new Error('Account OAuth non collegato')
+      throw new Error('OAuth account is not connected')
     }
     const refreshToken = await decryptString(env, account.secret_enc)
     let token: { access_token: string; expires_in: number; refresh_token?: string }
@@ -36,7 +36,7 @@ export async function getMailCredentials(env: Env, account: AccountRow): Promise
     } else if (account.oauth_provider === 'google') {
       token = await refreshGoogleToken(env, refreshToken)
     } else {
-      throw new Error('Provider OAuth non supportato')
+      throw new Error('Unsupported OAuth provider')
     }
     const accessEncrypted = await encryptString(env, token.access_token)
     const expiresAt = now + token.expires_in
@@ -54,7 +54,7 @@ export async function getMailCredentials(env: Env, account: AccountRow): Promise
     return { username, mode: 'oauth2', accessToken: token.access_token }
   }
   if (!account.secret_enc) {
-    throw new Error('Password non configurata')
+    throw new Error('Password is not configured')
   }
   return {
     username,

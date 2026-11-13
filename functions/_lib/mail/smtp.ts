@@ -5,7 +5,7 @@ import { getMailCredentials } from './credentials'
 
 function configOf(account: AccountRow): SmtpConfig {
   if (!account.smtp_host || !account.smtp_port || !account.smtp_security) {
-    throw new Error('Configurazione SMTP mancante')
+    throw new Error('SMTP configuration is missing')
   }
   return {
     host: account.smtp_host,

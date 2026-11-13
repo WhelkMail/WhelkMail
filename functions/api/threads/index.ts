@@ -286,7 +286,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
           loaded: null,
           syncing: false,
           stale: false,
-          error: error instanceof Error ? error.message : 'Errore',
+          error: error instanceof Error ? error.message : 'Error',
         }
       }
     }),
@@ -312,7 +312,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       errors.push({
         accountId: account.id,
         email: account.email,
-        message: result.error ?? 'Errore',
+        message: result.error ?? 'Error',
       })
       continue
     }
@@ -353,7 +353,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       errors.push({
         accountId: account.id,
         email: account.email,
-        message: error instanceof Error ? error.message : 'Errore',
+        message: error instanceof Error ? error.message : 'Error',
       })
     }
   }

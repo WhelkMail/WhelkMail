@@ -58,7 +58,7 @@ export class MailjetRelay implements RelayAdapter {
       const detail = result?.Errors
         ? Object.values(result.Errors).join('; ')
         : errorDetail(data, `HTTP ${response.status}`)
-      throw new Error(`Invio Mailjet fallito: ${detail}`)
+      throw new Error(`Mailjet send failed: ${detail}`)
     }
     return { providerMessageId: result.MessageID ?? null }
   }

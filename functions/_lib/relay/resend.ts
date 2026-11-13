@@ -41,7 +41,7 @@ export class ResendRelay implements RelayAdapter {
     })
     const data = (await readJson(response)) as ResendResponse | null
     if (!response.ok) {
-      throw new Error(`Invio Resend fallito: ${errorDetail(data, `HTTP ${response.status}`)}`)
+      throw new Error(`Resend send failed: ${errorDetail(data, `HTTP ${response.status}`)}`)
     }
     return { providerMessageId: data?.id ?? null }
   }

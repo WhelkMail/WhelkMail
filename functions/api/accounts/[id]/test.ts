@@ -18,7 +18,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const checks: Record<string, string> = {}
   try {
     const folders = await withImap(context.env, row, (connection) => connection.listFolders())
-    checks.imap = `ok (${folders.length} cartelle)`
+    checks.imap = `ok (${folders.length} folders)`
   } catch (error) {
     return fail(
       'IMAP connection failed',
@@ -30,7 +30,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
   try {
     if (!row.smtp_host || !row.smtp_port || !row.smtp_security) {
-      throw new Error('Configurazione SMTP mancante')
+      throw new Error('SMTP configuration is missing')
     }
     const credentials = await getMailCredentials(context.env, row)
     const connection = await SmtpConnection.open({

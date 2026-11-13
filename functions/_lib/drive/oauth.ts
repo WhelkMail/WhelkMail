@@ -68,7 +68,7 @@ export async function exchangeCode(
   })
   const data = (await response.json()) as TokenResponse & { error?: string; error_description?: string }
   if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description ?? data.error ?? 'Scambio codice Google fallito')
+    throw new Error(data.error_description ?? data.error ?? 'Google code exchange failed')
   }
   return data
 }
@@ -86,7 +86,7 @@ export async function refreshAccessToken(env: Env, refreshToken: string): Promis
   })
   const data = (await response.json()) as TokenResponse & { error?: string; error_description?: string }
   if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description ?? data.error ?? 'Refresh token Google fallito')
+    throw new Error(data.error_description ?? data.error ?? 'Google token refresh failed')
   }
   return data
 }
@@ -113,7 +113,7 @@ export async function createDriveFolder(accessToken: string, name = 'WhelkMail')
   })
   const data = (await response.json()) as DriveFileResponse
   if (!response.ok || !data.id) {
-    throw new Error(data.error?.message ?? 'Creazione cartella Drive fallita')
+    throw new Error(data.error?.message ?? 'Creating the Drive folder failed')
   }
   return data.id
 }

@@ -7,7 +7,7 @@ export class R2Storage implements StorageAdapter {
 
   constructor(env: Env) {
     if (!env.BUCKET) {
-      throw new Error('R2 non configurato su questo deployment')
+      throw new Error('R2 is not configured on this deployment')
     }
     this.bucket = env.BUCKET
   }

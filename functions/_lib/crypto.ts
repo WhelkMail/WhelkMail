@@ -56,7 +56,7 @@ export async function pkceChallenge(verifier: string): Promise<string> {
 function rawKey(env: Env): Uint8Array<ArrayBuffer> {
   const key = fromBase64(env.TOKEN_ENC_KEY)
   if (key.length !== 32) {
-    throw new Error('TOKEN_ENC_KEY deve essere una chiave base64 di 32 byte')
+    throw new Error('TOKEN_ENC_KEY must be a base64-encoded 32-byte key')
   }
   return key
 }
@@ -99,7 +99,7 @@ export async function encryptString(env: Env, value: string): Promise<string> {
 export async function decryptString(env: Env, value: string): Promise<string> {
   const [ivPart, dataPart] = value.split('.')
   if (!ivPart || !dataPart) {
-    throw new Error('Token cifrato non valido')
+    throw new Error('Invalid encrypted token')
   }
   const plaintext = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: fromBase64(ivPart) },

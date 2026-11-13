@@ -78,7 +78,7 @@ export async function deleteArchivedMessage(
   }
   const parsed = parseImapMessageId(message.id)
   if (!parsed) {
-    await logDeletion(env, account.id, message.id, 'failed', 'ID messaggio non valido')
+    await logDeletion(env, account.id, message.id, 'failed', 'Invalid message ID')
     return 'failed'
   }
   try {

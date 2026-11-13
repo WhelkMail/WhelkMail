@@ -85,18 +85,18 @@ export class ImapConnection {
       { secureTransport: security, allowHalfOpen: false },
     )
     const connection = new ImapConnection(socket)
-    await withTimeout(socket.opened, timeoutMs, 'Connessione IMAP scaduta')
+    await withTimeout(socket.opened, timeoutMs, 'IMAP connection timed out')
     connection.attach()
     let greeting: string
     try {
-      greeting = await withTimeout(connection.readLine(), timeoutMs, 'Saluto IMAP scaduto')
+      greeting = await withTimeout(connection.readLine(), timeoutMs, 'IMAP greeting timed out')
     } catch (error) {
       connection.close()
       throw error
     }
     if (!greeting.toUpperCase().startsWith('* OK')) {
       connection.close()
-      throw new ImapError(`Saluto IMAP inatteso: ${greeting}`)
+      throw new ImapError(`Unexpected IMAP greeting: ${greeting}`)
     }
     if (config.security === 'starttls') {
       await connection.upgradeTls(timeoutMs)
@@ -113,7 +113,7 @@ export class ImapConnection {
   private async upgradeTls(timeoutMs: number): Promise<void> {
     const result = await this.command('STARTTLS')
     if (!result.ok) {
-      throw new ImapError('STARTTLS rifiutato dal server IMAP')
+      throw new ImapError('STARTTLS rejected by the IMAP server')
     }
     try {
       this.reader.releaseLock()
@@ -127,14 +127,14 @@ export class ImapConnection {
     }
     const upgraded = this.socket.startTls()
     this.socket = upgraded
-    await withTimeout(upgraded.opened, timeoutMs, 'Upgrade TLS IMAP scaduto')
+    await withTimeout(upgraded.opened, timeoutMs, 'IMAP TLS upgrade timed out')
     this.attach()
   }
 
   private async fill(): Promise<void> {
     const { value, done } = await this.reader.read()
     if (done || !value) {
-      throw new ImapError('Connessione IMAP chiusa')
+      throw new ImapError('IMAP connection closed')
     }
     const merged = new Uint8Array(this.buffer.length + value.length)
     merged.set(this.buffer)
@@ -175,7 +175,7 @@ export class ImapConnection {
       return await withTimeout(
         this.executeCommand(command, onContinuation),
         COMMAND_TIMEOUT_MS,
-        `Operazione IMAP scaduta: ${command.split(' ')[0]}`,
+        `IMAP operation timed out: ${command.split(' ')[0]}`,
       )
     } catch (error) {
       if (error instanceof ImapTimeoutError) {
@@ -390,7 +390,7 @@ export class ImapConnection {
     const { parts } = await this.command(`UID FETCH ${uid} (BODY${markSeen ? '' : '.PEEK'}[])`)
     const part = parts.find((item) => item.literal)
     if (!part?.literal) {
-      throw new ImapError(`Messaggio ${uid} non trovato`)
+      throw new ImapError(`Message ${uid} not found`)
     }
     return part.literal
   }
@@ -460,7 +460,7 @@ export class ImapConnection {
       return await withTimeout(
         this.executeAppend(folder, message, flags),
         COMMAND_TIMEOUT_MS,
-        'APPEND IMAP scaduto',
+        'IMAP APPEND timed out',
       )
     } catch (error) {
       if (error instanceof ImapTimeoutError) {
@@ -479,7 +479,7 @@ export class ImapConnection {
     await this.writeLine(`${tag} APPEND ${quote(folder)} ${flags} {${message.length}}`)
     const continuation = await this.readLine()
     if (!continuation.startsWith('+')) {
-      throw new ImapError(`APPEND rifiutato: ${continuation}`)
+      throw new ImapError(`APPEND rejected: ${continuation}`)
     }
     await this.writer.write(message)
     await this.writeLine('')

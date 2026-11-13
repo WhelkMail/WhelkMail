@@ -73,7 +73,7 @@ async function vapidAuthorization(env: Env, endpoint: string): Promise<string> {
   const privateKey = env.VAPID_PRIVATE_KEY ?? ''
   const publicBytes = base64UrlToBytes(publicKey)
   if (publicBytes.length !== 65 || publicBytes[0] !== 4) {
-    throw new Error('VAPID public key non valida')
+    throw new Error('Invalid VAPID public key')
   }
   const x = bytesToBase64Url(publicBytes.slice(1, 33))
   const y = bytesToBase64Url(publicBytes.slice(33, 65))
@@ -112,7 +112,7 @@ async function encryptPayload(
   const uaPublic = base64UrlToBytes(subscription.p256dh)
   const authSecret = base64UrlToBytes(subscription.auth)
   if (uaPublic.length !== 65 || authSecret.length !== 16) {
-    throw new Error('Sottoscrizione push non valida')
+    throw new Error('Invalid push subscription')
   }
   const uaKey = await crypto.subtle.importKey(
     'raw',

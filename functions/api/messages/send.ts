@@ -75,7 +75,7 @@ async function persistRelayMessage(input: PersistInput): Promise<MessageRow> {
     .bind(input.id)
     .first<MessageRow>()
   if (!row) {
-    throw new Error('Persistenza messaggio fallita')
+    throw new Error('Saving the message failed')
   }
   return row
 }
@@ -207,7 +207,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         }
       } catch (error) {
         warning = `Messaggio inviato, ma la copia in ${account.sent_folder} non è stata salvata: ${
-          error instanceof Error ? error.message : 'errore IMAP'
+          error instanceof Error ? error.message : 'IMAP error'
         }`
       }
     }
@@ -312,7 +312,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           () => undefined,
         )
       } catch (error) {
-        const detail = error instanceof Error ? error.message : 'errore IMAP'
+        const detail = error instanceof Error ? error.message : 'IMAP error'
         // The message already left: keep the MIME somewhere instead of losing
         // attachments and the raw view.
         let rescuedWith: 'drive' | 'r2' | null = null
@@ -329,8 +329,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           }
         }
         warning = rescuedWith
-          ? `Messaggio inviato, ma la copia in ${copyTarget.sent_folder || 'Sent'} di ${copyTarget.email} non è stata salvata (${detail}). Il messaggio è stato archiviato su ${rescuedWith === 'r2' ? 'R2' : 'Google Drive'}.`
-          : `Messaggio inviato, ma la copia in ${copyTarget.sent_folder || 'Sent'} di ${copyTarget.email} non è stata salvata: ${detail}`
+          ? `Message sent, but the copy in ${copyTarget.sent_folder || 'Sent'} of ${copyTarget.email} wasn't saved (${detail}). The message was archived to ${rescuedWith === 'r2' ? 'R2' : 'Google Drive'} instead.`
+          : `Message sent, but the copy in ${copyTarget.sent_folder || 'Sent'} of ${copyTarget.email} wasn't saved: ${detail}`
       }
     }
     const row = await persistRelayMessage({
@@ -360,7 +360,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
     return json({ ok: true, message: relayMessageSummary(row, account), warning }, 201)
   } catch (error) {
-    const detail = error instanceof Error ? error.message : 'Invio fallito'
+    const detail = error instanceof Error ? error.message : 'Send failed'
     await persistRelayMessage({
       env: context.env,
       account,
