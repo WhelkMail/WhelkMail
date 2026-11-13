@@ -329,6 +329,8 @@ For send-only accounts:
 4. Paste it in the account creation form or in Settings.
 5. Choose where the sent copies and drafts go: **Google Drive**, **R2** or **another account's mailbox**. The third option appends every message to the Sent folder (and every draft to the Drafts folder) of a connected IMAP account instead of storing them on Drive/R2; it is an alternative, not an addition.
 
+> A relay account always needs a **working** destination. If the sent copy cannot be saved (Drive not connected, no `BUCKET` binding, or the chosen IMAP mailbox disconnected) the send is aborted **before** the relay is called and comes back as `storage_failed`.
+
 Supported providers: SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark, Cloudflare Email Service.
 
 **Cloudflare Email Service** ([docs](https://developers.cloudflare.com/email-service/api/send-emails/rest-api/)):
@@ -340,6 +342,7 @@ Supported providers: SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmar
 - The sending domain must be onboarded under **Email Service → Email Sending** in the same account. Each subdomain is onboarded separately.
 - By default, a message with any recipient on Cloudflare's suppression list is rejected outright (error `10205`). Turn on **Drop suppressed recipients** for the sending domain to send to the other recipients instead; WhelkMail then reports the dropped addresses as not delivered.
 - The custom SMTP option can't be used with Cloudflare's SMTP endpoint (`smtp.mx.cloudflare.net`): Workers block TCP sockets to Cloudflare's own IP ranges.
+- Limits enforced by WhelkMail before the API call: at most **50 recipients** per message (to, cc and bcc combined) and **15 MiB of attachments**, to stay under Cloudflare's 25 MiB encoded-message limit. Larger messages are rejected with `too_many_recipients` or `attachment_too_large`.
 
 ## 4. Optional R2 archive
 
@@ -413,6 +416,9 @@ Re-run `npm run db:remote` after changing `db/schema.sql`. `CREATE TABLE IF NOT 
 | IMAP timeout | Wrong host/port/security: 993 TLS, 465 TLS, 587 STARTTLS, 143 STARTTLS |
 | Drafts fail | The provider has no `\Drafts` folder or does not allow `APPEND` |
 | Duplicate sent copies | `auto_saves_sent` is disabled but the provider already stores sent mail |
+| Sending from a relay account fails with `storage_failed` | No working sent-copy destination: connect Google Drive, create the `BUCKET` binding, or pick an IMAP mailbox for Sent/Drafts. The send is aborted before the relay is called |
+| `too_many_recipients` when sending | The relay caps recipients per message (to + cc + bcc combined); Cloudflare Email Service allows 50 |
+| Custom SMTP relay to `smtp.gmail.com` (465/587) or `smtp.mail.yahoo.com:465` fails with `Network connection lost.` | Those hosts drop the connection from Workers before AUTH. Use an app password on a host that accepts the connection, or an HTTP relay |
 | Custom domain error 1014/522 | DNS record missing or origin not ready |
 
 ## 8. Costs and limits

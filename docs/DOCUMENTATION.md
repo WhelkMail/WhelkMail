@@ -596,6 +596,8 @@ Pages → Custom domains → add the domain and follow the DNS instructions. Aft
 - No per-user isolation or audit log. Login and 2FA rate limiting are present but per-IP only.
 - Generic API errors include a stable `code`; the UI translates it. Provider details (for example IMAP or relay responses) are shown to the authenticated admin to help debugging and are not exposed on public endpoints.
 - Attachment indicators in lists come from `BODYSTRUCTURE`. The newest bodies are prefetched in the background and cached; other bodies are downloaded when a message is opened.
+- A relay account needs a working sent-copy destination (Drive, R2 or an IMAP mailbox). Without one the send is aborted **before** the relay is called and returns `storage_failed`, so the message is never handed to the provider.
+- Custom SMTP relays to `smtp.gmail.com` (465 and 587) and `smtp.mail.yahoo.com:465` fail with `Network connection lost.` from Workers, before authentication; other hosts (for example `smtp.fastmail.com:465`) connect normally. Use an HTTP relay, or an SMTP host that accepts the connection.
 - The Cloudflare Email Service relay is experimental: the maintainer has not exercised it against a real Cloudflare account, so delivery, suppression handling (error `10205`), rate limits and per-recipient reporting are unverified. The code follows Cloudflare's documented REST API; use another relay for mail that must be delivered reliably.
 
 ## 18. License
