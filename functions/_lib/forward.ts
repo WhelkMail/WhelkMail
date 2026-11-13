@@ -54,12 +54,12 @@ export async function forwardFilteredMessage(
   try {
     const loaded = await loadRaw(env, message.id)
     if (!loaded) {
-      await logForward(env, filterId, account.id, message.id, 'failed', 'Messaggio originale non disponibile')
+      await logForward(env, filterId, account.id, message.id, 'failed', 'Original message not available')
       return 'failed'
     }
     const head = decoder.decode(loaded.bytes.slice(0, 8192)).toLowerCase()
     if (head.includes('x-whelkmail-forwarded:')) {
-      await logForward(env, filterId, account.id, message.id, 'skipped', 'Messaggio già inoltrato')
+      await logForward(env, filterId, account.id, message.id, 'skipped', 'Message already forwarded')
       return 'skipped'
     }
 
@@ -67,7 +67,7 @@ export async function forwardFilteredMessage(
     const from = toMailbox(email.from)
     const subject = email.subject?.trim() || message.subject || '(nessun oggetto)'
     if (recipients.length === 0) {
-      await logForward(env, filterId, account.id, message.id, 'failed', 'Nessun destinatario')
+      await logForward(env, filterId, account.id, message.id, 'failed', 'No recipients')
       return 'failed'
     }
     const originalText = bodyText(email).slice(0, 5000)

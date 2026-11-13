@@ -44,7 +44,7 @@ export class Smtp2GoRelay implements RelayAdapter {
     const data = (await readJson(response)) as Smtp2GoResponse | null
     if (!response.ok || !data?.data || data.data.succeeded !== 1) {
       const detail = data?.data?.failures?.join('; ') ?? data?.data?.error ?? errorDetail(data, `HTTP ${response.status}`)
-      throw new Error(`Invio SMTP2GO fallito: ${detail}`)
+      throw new Error(`SMTP2GO send failed: ${detail}`)
     }
     return { providerMessageId: data.data.email_id ?? null }
   }

@@ -62,12 +62,12 @@ export class SmtpConnection {
       { secureTransport: security, allowHalfOpen: false },
     )
     const connection = new SmtpConnection(socket)
-    await withTimeout(socket.opened, timeoutMs, 'Connessione SMTP scaduta')
+    await withTimeout(socket.opened, timeoutMs, 'SMTP connection timed out')
     connection.attach()
     const greeting = await connection.readResponse()
     if (greeting.code !== 220) {
       connection.close()
-      throw new SmtpError(`Saluto SMTP inatteso: ${greeting.lines.join(' | ')}`)
+      throw new SmtpError(`Unexpected SMTP greeting: ${greeting.lines.join(' | ')}`)
     }
     await connection.ehlo()
     if (config.security === 'starttls') {
@@ -97,7 +97,7 @@ export class SmtpConnection {
     }
     const upgraded = this.socket.startTls()
     this.socket = upgraded
-    await withTimeout(upgraded.opened, timeoutMs, 'Upgrade TLS SMTP scaduto')
+    await withTimeout(upgraded.opened, timeoutMs, 'SMTP TLS upgrade timed out')
     this.attach()
     await this.ehlo()
   }
@@ -105,7 +105,7 @@ export class SmtpConnection {
   private async fill(): Promise<void> {
     const { value, done } = await this.reader.read()
     if (done || !value) {
-      throw new SmtpError('Connessione SMTP chiusa')
+      throw new SmtpError('SMTP connection closed')
     }
     const merged = new Uint8Array(this.buffer.length + value.length)
     merged.set(this.buffer)
@@ -210,7 +210,7 @@ export class SmtpConnection {
       .map((line) => (line.startsWith('.') ? `.${line}` : line))
       .join('\r\n')
     await this.writer.write(encoder.encode(`${stuffed}\r\n.\r\n`))
-    await this.expect([250], 'Invio messaggio')
+    await this.expect([250], 'Message body')
   }
 
   async quit(): Promise<void> {

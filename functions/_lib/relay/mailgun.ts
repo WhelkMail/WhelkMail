@@ -46,7 +46,7 @@ export class MailgunRelay implements RelayAdapter {
     })
     const data = (await readJson(response)) as MailgunResponse | null
     if (!response.ok) {
-      throw new Error(`Invio Mailgun fallito: ${errorDetail(data, `HTTP ${response.status}`)}`)
+      throw new Error(`Mailgun send failed: ${errorDetail(data, `HTTP ${response.status}`)}`)
     }
     return { providerMessageId: data?.id ?? null }
   }

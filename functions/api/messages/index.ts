@@ -289,7 +289,7 @@ async function loadByLabel(
       errors.push({
         accountId: account.id,
         email: account.email,
-        message: error instanceof Error ? error.message : 'Errore IMAP',
+        message: error instanceof Error ? error.message : 'IMAP error',
       })
     }
   }
@@ -435,7 +435,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       errors.push({
         accountId: account.id,
         email: account.email,
-        message: error instanceof Error ? error.message : 'Errore IMAP',
+        message: error instanceof Error ? error.message : 'IMAP error',
       })
     }
   }

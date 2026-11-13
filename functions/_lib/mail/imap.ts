@@ -6,7 +6,7 @@ import { getMailCredentials } from './credentials'
 
 function configOf(account: AccountRow): ImapConfig {
   if (!account.imap_host || !account.imap_port || !account.imap_security) {
-    throw new Error('Configurazione IMAP mancante')
+    throw new Error('IMAP configuration is missing')
   }
   return {
     host: account.imap_host,
@@ -421,7 +421,7 @@ async function appendedUid(
   }
   const uids = await connection.searchAll()
   if (uids.length === 0) {
-    throw new Error('Messaggio non trovato dopo APPEND')
+    throw new Error('Message not found after APPEND')
   }
   return Math.max(...uids)
 }
@@ -484,7 +484,7 @@ export async function moveMessages(
           ? await resolveSpamFolder(connection, account, env)
           : await resolveTrashFolder(connection)
     if (destination === source) {
-      throw new Error('La cartella di destinazione coincide con quella di origine')
+      throw new Error('The destination folder is the same as the source folder')
     }
     try {
       await connection.copyMany(uids, destination)

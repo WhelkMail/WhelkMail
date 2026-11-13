@@ -44,7 +44,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       stateData.codeVerifier,
     )
     if (!tokens.refresh_token) {
-      throw new Error('Microsoft non ha restituito un refresh token')
+      throw new Error('Microsoft did not return a refresh token')
     }
     const actualEmail = emailFromIdToken(tokens.id_token)
     const refreshEncrypted = await encryptString(context.env, tokens.refresh_token)

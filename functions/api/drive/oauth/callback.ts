@@ -45,7 +45,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       stateData.codeVerifier,
     )
     if (!tokens.refresh_token) {
-      throw new Error('Google non ha restituito un refresh token')
+      throw new Error('Google did not return a refresh token')
     }
     const email = await fetchUserEmail(tokens.access_token)
     const folderId = row.drive_folder_id ?? (await createDriveFolder(tokens.access_token))

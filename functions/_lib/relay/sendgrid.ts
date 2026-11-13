@@ -57,7 +57,7 @@ export class SendGridRelay implements RelayAdapter {
           ?.map((item) => item.message)
           .filter(Boolean)
           .join('; ') ?? errorDetail(data, `HTTP ${response.status}`)
-      throw new Error(`Invio SendGrid fallito: ${detail}`)
+      throw new Error(`SendGrid send failed: ${detail}`)
     }
     return { providerMessageId: response.headers.get('X-Message-Id') }
   }

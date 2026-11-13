@@ -57,7 +57,7 @@ async function deleteRelayMessages(
       .bind(rawId)
       .first<{ account_id: string; storage_driver: string; storage_key: string }>()
     if (!row) {
-      errors.push({ ids: [id], message: 'Messaggio non trovato' })
+      errors.push({ ids: [id], message: 'Message not found' })
       continue
     }
     const account = await getAccountRow(env, row.account_id)
@@ -125,7 +125,7 @@ async function runActions(context: Parameters<PagesFunction<Env>>[0]): Promise<R
       relayIds.push(id)
       continue
     }
-    errors.push({ ids: [id], message: 'ID messaggio non valido' })
+    errors.push({ ids: [id], message: 'Invalid message ID' })
   }
 
   const queued = new Set<string>()
@@ -149,7 +149,7 @@ async function runActions(context: Parameters<PagesFunction<Env>>[0]): Promise<R
     }
     const account = await getAccountRow(context.env, group.accountId)
     if (!account || account.kind !== 'imap' || !account.secret_enc) {
-      errors.push({ ids: group.ids, message: 'Account non disponibile' })
+      errors.push({ ids: group.ids, message: 'Account not available' })
       continue
     }
     try {
@@ -167,7 +167,7 @@ async function runActions(context: Parameters<PagesFunction<Env>>[0]): Promise<R
     } catch (error) {
       errors.push({
         ids: group.ids,
-        message: error instanceof Error ? error.message : 'Errore IMAP',
+        message: error instanceof Error ? error.message : 'IMAP error',
       })
     }
   }
@@ -176,7 +176,7 @@ async function runActions(context: Parameters<PagesFunction<Env>>[0]): Promise<R
     if (target !== 'trash') {
       errors.push({
         ids: relayIds,
-        message: 'Spostamento non supportato per gli account di solo invio',
+        message: 'Moving messages is not supported for send-only accounts',
       })
     } else {
       moved += await deleteRelayMessages(context.env, relayIds, errors)

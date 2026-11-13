@@ -82,7 +82,7 @@ export async function exchangeMicrosoftCode(
   })
   const data = (await response.json()) as TokenResponse
   if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description ?? data.error ?? 'Scambio codice Microsoft fallito')
+    throw new Error(data.error_description ?? data.error ?? 'Microsoft code exchange failed')
   }
   return data
 }
@@ -101,7 +101,7 @@ export async function refreshMicrosoftToken(env: Env, refreshToken: string): Pro
   })
   const data = (await response.json()) as TokenResponse
   if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description ?? data.error ?? 'Refresh token Microsoft fallito')
+    throw new Error(data.error_description ?? data.error ?? 'Microsoft token refresh failed')
   }
   return data
 }

@@ -45,7 +45,7 @@ export class PostmarkRelay implements RelayAdapter {
     })
     const data = (await readJson(response)) as PostmarkResponse | null
     if (!response.ok || (data?.ErrorCode ?? 0) !== 0) {
-      throw new Error(`Invio Postmark fallito: ${errorDetail(data, `HTTP ${response.status}`)}`)
+      throw new Error(`Postmark send failed: ${errorDetail(data, `HTTP ${response.status}`)}`)
     }
     return { providerMessageId: data?.MessageID ?? null }
   }

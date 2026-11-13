@@ -22,7 +22,7 @@ const LABELS: Record<string, string> = {
   sendgrid: 'SendGrid',
   mailjet: 'Mailjet',
   postmark: 'Postmark',
-  custom: 'SMTP personalizzato',
+  custom: 'Custom SMTP',
 }
 
 const MAX_ATTACHMENT_BYTES: Record<string, number> = {
@@ -84,7 +84,7 @@ export async function getRelay(env: Env, account?: AccountRow): Promise<RelayAda
 
   if (provider === 'custom') {
     if (!account?.smtp_host || !account.smtp_port || !account.smtp_security) {
-      throw new Error('Configurazione SMTP personalizzata mancante')
+      throw new Error('Custom SMTP configuration is missing')
     }
     return new CustomSmtpRelay({
       host: account.smtp_host,
@@ -96,7 +96,7 @@ export async function getRelay(env: Env, account?: AccountRow): Promise<RelayAda
   }
 
   if (!key) {
-    throw new Error(`Chiave API relay non configurata per ${provider}`)
+    throw new Error(`Relay API key is not configured for ${provider}`)
   }
   switch (provider) {
     case 'smtp2go':
@@ -105,7 +105,7 @@ export async function getRelay(env: Env, account?: AccountRow): Promise<RelayAda
       return new ResendRelay(key)
     case 'mailgun':
       if (!domain) {
-        throw new Error('Dominio Mailgun non configurato')
+        throw new Error('Mailgun domain is not configured')
       }
       return new MailgunRelay(key, domain, region)
     case 'brevo':
@@ -114,13 +114,13 @@ export async function getRelay(env: Env, account?: AccountRow): Promise<RelayAda
       return new SendGridRelay(key)
     case 'mailjet':
       if (!secret) {
-        throw new Error('Secret Mailjet non configurato')
+        throw new Error('Mailjet secret is not configured')
       }
       return new MailjetRelay(key, secret)
     case 'postmark':
       return new PostmarkRelay(key)
     default:
-      throw new Error(`Provider relay non supportato: ${provider}`)
+      throw new Error(`Unsupported relay provider: ${provider}`)
   }
 }
 

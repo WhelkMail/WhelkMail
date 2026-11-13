@@ -67,7 +67,7 @@ export async function exchangeGoogleCode(
   })
   const data = (await response.json()) as TokenResponse
   if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description ?? data.error ?? 'Scambio codice Google fallito')
+    throw new Error(data.error_description ?? data.error ?? 'Google code exchange failed')
   }
   return data
 }
@@ -85,7 +85,7 @@ export async function refreshGoogleToken(env: Env, refreshToken: string): Promis
   })
   const data = (await response.json()) as TokenResponse
   if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description ?? data.error ?? 'Refresh token Google fallito')
+    throw new Error(data.error_description ?? data.error ?? 'Google token refresh failed')
   }
   return data
 }

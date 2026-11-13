@@ -41,7 +41,7 @@ export class BrevoRelay implements RelayAdapter {
     })
     const data = (await readJson(response)) as BrevoResponse | null
     if (!response.ok) {
-      throw new Error(`Invio Brevo fallito: ${errorDetail(data, `HTTP ${response.status}`)}`)
+      throw new Error(`Brevo send failed: ${errorDetail(data, `HTTP ${response.status}`)}`)
     }
     return { providerMessageId: data?.messageId ?? null }
   }
