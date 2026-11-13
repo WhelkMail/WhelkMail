@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Cloud, HardDrive, Send, Server } from 'lucide-react'
 import { MAIL_PRESETS, RELAY_PROVIDERS, findPreset, findRelayProvider } from '../../shared/presets'
 import type {
@@ -12,6 +12,7 @@ import type {
 } from '../../shared/types'
 import { useI18n } from '../i18n'
 import { api } from '../lib/api'
+import { resolveSentCopyTarget } from '../lib/sent-copy'
 import { cn } from '../lib/utils'
 import { LocaleToggle } from './LocaleToggle'
 import { WhelkLogo } from './WhelkLogo'
@@ -61,7 +62,23 @@ export function Onboarding({ accounts, storage, health, busy, error, onCancel, o
 
   const preset = findPreset(presetId) ?? initial
   const relayMeta = findRelayProvider(relayProvider)
-  const relaySentCopyTargets = accounts.filter((item) => item.kind === 'imap' && item.connected)
+  const relaySentCopyTargets = useMemo(
+    () => accounts.filter((item) => item.kind === 'imap' && item.connected),
+    [accounts],
+  )
+  const relaySentCopyTarget = resolveSentCopyTarget(relaySentCopyAccountId, relaySentCopyTargets)
+
+  // Keep the form state aligned with the dropdown: as soon as the IMAP option is
+  // active the first mailbox is selected instead of leaving an empty value that
+  // the submit handler would reject.
+  useEffect(() => {
+    if (relayStorage !== 'imap') {
+      return
+    }
+    if (relaySentCopyTarget && relaySentCopyTarget !== relaySentCopyAccountId) {
+      setRelaySentCopyAccountId(relaySentCopyTarget)
+    }
+  }, [relayStorage, relaySentCopyTarget, relaySentCopyAccountId])
   const oauthProvider =
     mode === 'imap'
       ? presetId === 'gmail'
@@ -151,7 +168,7 @@ export function Onboarding({ accounts, storage, health, busy, error, onCancel, o
       setLocalError(t('onboarding.relayDomainRequired'))
       return
     }
-    if (relayStorage === 'imap' && !relaySentCopyAccountId) {
+    if (relayStorage === 'imap' && !relaySentCopyTarget) {
       setLocalError(t('onboarding.sentCopyRequired'))
       return
     }
@@ -160,7 +177,7 @@ export function Onboarding({ accounts, storage, health, busy, error, onCancel, o
       email,
       displayName,
       storageDriver: relayStorage === 'imap' ? 'imap' : relayStorage === 'r2' ? 'r2' : 'drive',
-      sentCopyAccountId: relayStorage === 'imap' ? relaySentCopyAccountId : undefined,
+      sentCopyAccountId: relayStorage === 'imap' ? relaySentCopyTarget : undefined,
       relayProvider,
       relayApiKey: relayApiKey || undefined,
       relayApiSecret: relayApiSecret || undefined,
@@ -597,7 +614,12 @@ export function Onboarding({ accounts, storage, health, busy, error, onCancel, o
                   <button
                     type="button"
                     disabled={relaySentCopyTargets.length === 0}
-                    onClick={() => setRelayStorage('imap')}
+                    onClick={() => {
+                      setRelayStorage('imap')
+                      if (relaySentCopyTarget) {
+                        setRelaySentCopyAccountId(relaySentCopyTarget)
+                      }
+                    }}
                     className={cn(
                       'flex items-start gap-3 rounded-xl border p-4 text-left transition',
                       relayStorage === 'imap' ? 'border-brand bg-brand-soft' : 'border-line',
@@ -628,7 +650,7 @@ export function Onboarding({ accounts, storage, health, busy, error, onCancel, o
                       {t('settings.sentCopyTarget')}
                     </span>
                     <select
-                      value={relaySentCopyAccountId}
+                      value={relaySentCopyTarget}
                       onChange={(event) => setRelaySentCopyAccountId(event.target.value)}
                       className="w-full rounded-lg border border-line px-3 py-2 outline-none focus:border-brand"
                     >
