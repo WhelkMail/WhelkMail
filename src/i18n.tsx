@@ -600,6 +600,14 @@ const en: Record<string, string> = {
   'errors.draft_delete_failed': 'Deleting the draft failed',
   'errors.internal': 'Internal error',
   'errors.invalid_request': 'Invalid request',
+  // Preset names and setup hints from shared/presets.ts (labelKey/noteKey).
+  'presets.custom.label': 'Other / generic IMAP',
+  'presets.gmail.note': 'You can use Google OAuth, or an app password with 2-step verification turned on.',
+  'presets.outlook.note': 'Microsoft no longer accepts passwords for IMAP/SMTP: OAuth authorization is required.',
+  'presets.yahoo.note': 'Requires an app password generated in Yahoo’s security settings.',
+  'presets.icloud.note': 'Requires an app-specific password generated at appleid.apple.com.',
+  'presets.custom.note': 'Enter the hosts and ports from your provider. If it doesn’t save sent mail, the client APPENDs it to Sent.',
+  'relayProviders.custom.label': 'Custom SMTP',
 }
 
 const it: Record<string, string> = {
@@ -1200,6 +1208,14 @@ const it: Record<string, string> = {
   'errors.draft_delete_failed': 'Eliminazione bozza fallita',
   'errors.internal': 'Errore interno',
   'errors.invalid_request': 'Richiesta non valida',
+  // Preset names and setup hints from shared/presets.ts (labelKey/noteKey).
+  'presets.custom.label': 'Altro / IMAP generico',
+  'presets.gmail.note': 'Puoi usare OAuth Google oppure una password per app con verifica in due passaggi attiva.',
+  'presets.outlook.note': 'Microsoft non accetta più password per IMAP/SMTP: serve l’autorizzazione OAuth.',
+  'presets.yahoo.note': 'Serve una password per app generata nelle impostazioni di sicurezza Yahoo.',
+  'presets.icloud.note': 'Serve una password specifica per l’app generata su appleid.apple.com.',
+  'presets.custom.note': 'Inserisci host e porte forniti dal tuo provider. Se non salva le inviate, il client fa APPEND in Sent.',
+  'relayProviders.custom.label': 'SMTP personalizzato',
 }
 
 const messages: Record<Locale, Record<string, string>> = { en, it }

@@ -648,7 +648,7 @@ function AccountCard({
               >
                 {RELAY_PROVIDERS.map((provider) => (
                   <option key={provider.id} value={provider.id}>
-                    {provider.label}
+                    {provider.labelKey ? t(provider.labelKey) : provider.label}
                   </option>
                 ))}
               </select>

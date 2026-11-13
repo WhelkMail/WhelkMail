@@ -2,7 +2,10 @@ import type { AuthType, MailSecurity } from './types'
 
 export interface MailPreset {
   id: string
+  // Shown as-is unless labelKey is set; use labelKey for anything that isn't a
+  // brand name, so it follows the UI language.
   label: string
+  labelKey?: string
   imapHost: string
   imapPort: number
   imapSecurity: MailSecurity
@@ -13,7 +16,8 @@ export interface MailPreset {
   oauthProvider?: 'google' | 'microsoft'
   autoSavesSent: boolean
   maxAttachmentBytes: number
-  note: string
+  // i18n key for the setup hint shown under the preset picker.
+  noteKey: string
 }
 
 export const MAIL_PRESETS: MailPreset[] = [
@@ -30,7 +34,7 @@ export const MAIL_PRESETS: MailPreset[] = [
     oauthProvider: 'google',
     autoSavesSent: true,
     maxAttachmentBytes: 15 * 1024 * 1024,
-    note: 'Puoi usare OAuth Google oppure una password per app con verifica in due passaggi attiva.',
+    noteKey: 'presets.gmail.note',
   },
   {
     id: 'outlook',
@@ -45,7 +49,7 @@ export const MAIL_PRESETS: MailPreset[] = [
     oauthProvider: 'microsoft',
     autoSavesSent: true,
     maxAttachmentBytes: 15 * 1024 * 1024,
-    note: 'Microsoft non accetta più password per IMAP/SMTP: serve l’autorizzazione OAuth.',
+    noteKey: 'presets.outlook.note',
   },
   {
     id: 'yahoo',
@@ -59,7 +63,7 @@ export const MAIL_PRESETS: MailPreset[] = [
     authType: 'password',
     autoSavesSent: true,
     maxAttachmentBytes: 15 * 1024 * 1024,
-    note: 'Serve una password per app generata nelle impostazioni di sicurezza Yahoo.',
+    noteKey: 'presets.yahoo.note',
   },
   {
     id: 'icloud',
@@ -73,11 +77,12 @@ export const MAIL_PRESETS: MailPreset[] = [
     authType: 'password',
     autoSavesSent: true,
     maxAttachmentBytes: 15 * 1024 * 1024,
-    note: 'Serve una password specifica per l’app generata su appleid.apple.com.',
+    noteKey: 'presets.icloud.note',
   },
   {
     id: 'custom',
     label: 'Altro / IMAP generico',
+    labelKey: 'presets.custom.label',
     imapHost: '',
     imapPort: 993,
     imapSecurity: 'tls',
@@ -87,7 +92,7 @@ export const MAIL_PRESETS: MailPreset[] = [
     authType: 'password',
     autoSavesSent: false,
     maxAttachmentBytes: 15 * 1024 * 1024,
-    note: 'Inserisci host e porte forniti dal tuo provider. Se non salva le inviate, il client fa APPEND in Sent.',
+    noteKey: 'presets.custom.note',
   },
 ]
 
@@ -101,6 +106,8 @@ export interface RelayProviderOption {
   needsSecret: boolean
   needsDomain: boolean
   manual?: boolean
+  // As MailPreset.labelKey: set when the label isn't a brand name.
+  labelKey?: string
 }
 
 export const RELAY_PROVIDERS: RelayProviderOption[] = [
@@ -111,7 +118,7 @@ export const RELAY_PROVIDERS: RelayProviderOption[] = [
   { id: 'sendgrid', label: 'SendGrid', needsSecret: false, needsDomain: false },
   { id: 'mailjet', label: 'Mailjet', needsSecret: true, needsDomain: false },
   { id: 'postmark', label: 'Postmark', needsSecret: false, needsDomain: false },
-  { id: 'custom', label: 'SMTP personalizzato', needsSecret: false, needsDomain: false, manual: true },
+  { id: 'custom', label: 'SMTP personalizzato', labelKey: 'relayProviders.custom.label', needsSecret: false, needsDomain: false, manual: true },
 ]
 
 export function findRelayProvider(id: string | undefined): RelayProviderOption | undefined {
