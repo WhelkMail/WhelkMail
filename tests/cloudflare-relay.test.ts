@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CloudflareRelay } from '../functions/_lib/relay/cloudflare'
-import { relayDomainMissing } from '../functions/_lib/relay/validation'
+import { recipientLimitExceeded, relayDomainMissing } from '../functions/_lib/relay/validation'
 import { findRelayProvider } from '../shared/presets'
 import type { RelayMessage } from '../functions/_lib/relay/types'
 
@@ -96,5 +96,24 @@ describe('relay domain validation', () => {
       error: 'Mailgun domain is required',
       code: 'relay_domain_required',
     })
+  })
+})
+
+describe('relay recipient limit', () => {
+  it('allows up to the limit and rejects one more, counting to, cc and bcc together', async () => {
+    const relay = new CloudflareRelay('token', 'acct')
+    expect(relay.maxRecipients).toBe(50)
+    expect(recipientLimitExceeded(relay, 50)).toBeNull()
+
+    const response = recipientLimitExceeded(relay, 51)
+    expect(response?.status).toBe(400)
+    expect(await response?.json()).toMatchObject({
+      code: 'too_many_recipients',
+      detail: 'Cloudflare Email Service allows at most 50 recipients per message (to, cc and bcc combined); this message has 51.',
+    })
+  })
+
+  it('ignores relays without a limit', () => {
+    expect(recipientLimitExceeded({ label: 'Postmark' }, 500)).toBeNull()
   })
 })

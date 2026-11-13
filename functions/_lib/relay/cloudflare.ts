@@ -38,6 +38,9 @@ export class CloudflareRelay implements RelayAdapter {
   // Cloudflare's limit is 25 MiB for the whole encoded message; base64 makes
   // attachments about a third larger, so 15 MiB of raw files stays well under.
   maxAttachmentBytes = 15 * 1024 * 1024
+  // To, cc and bcc combined; Cloudflare rejects anything above this.
+  // https://developers.cloudflare.com/email-service/platform/limits/#email-content-limits
+  maxRecipients = 50
   private apiToken: string
   private accountId: string
 

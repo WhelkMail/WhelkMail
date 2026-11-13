@@ -18,6 +18,7 @@ import { queueSync } from '../../_lib/sync'
 import { buildMime, snippetOf } from '../../_lib/mime'
 import { normalizeMessageId, threadKeyFor } from '../../_lib/mail/thread-key'
 import { getRelay, type RelayAdapter } from '../../_lib/relay'
+import { recipientLimitExceeded } from '../../_lib/relay/validation'
 import { copyObjectKey, getStorage, rescueCandidates } from '../../_lib/storage'
 
 interface PersistInput {
@@ -251,6 +252,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       undefined,
       'attachment_too_large',
     )
+  }
+  const tooManyRecipients = recipientLimitExceeded(
+    relay,
+    input.to.length + input.cc.length + input.bcc.length,
+  )
+  if (tooManyRecipients) {
+    return tooManyRecipients
   }
   const mime = buildMime({
     from: { name: account.display_name, email: account.email },
