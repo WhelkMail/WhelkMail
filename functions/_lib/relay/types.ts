@@ -18,6 +18,9 @@ export interface RelayMessage {
 
 export interface RelayResult {
   providerMessageId: string | null
+  // Recipients the provider accepted the message for but will not deliver
+  // to (permanent bounce, suppression list). The send still succeeds.
+  undelivered?: string[]
 }
 
 export interface RelayAdapter {

@@ -293,7 +293,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   try {
-    await relay.send({
+    const relayResult = await relay.send({
       fromName: account.display_name,
       fromEmail: account.email,
       to: input.to,
@@ -358,7 +358,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         () => undefined,
       )
     }
-    return json({ ok: true, message: relayMessageSummary(row, account), warning }, 201)
+    // Recipients the relay accepted but won't deliver to (e.g. Cloudflare's
+    // permanent_bounces): still a success, but the client gets the list so it
+    // can warn about them.
+    const undelivered = relayResult.undelivered ?? []
+    return json(
+      {
+        ok: true,
+        message: relayMessageSummary(row, account),
+        warning,
+        ...(undelivered.length > 0 ? { undelivered } : {}),
+      },
+      201,
+    )
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'Send failed'
     await persistRelayMessage({

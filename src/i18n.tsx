@@ -544,6 +544,7 @@ const en: Record<string, string> = {
   'app.syncStalled':
     'Sync is not making progress: check the account in Settings (archiving or storage may be failing).',
   'app.emailSent': 'Email sent',
+  'app.emailSentUndelivered': 'Sent, but these addresses were not delivered: {addresses}',
   'app.emailSentInFolder': 'Email sent — copy saved in {folder}',
   'app.accountCreated': 'Account created',
   'app.accountCreatedTest': 'Account created: test the connection in settings',
@@ -1154,6 +1155,7 @@ const it: Record<string, string> = {
   'app.googleConnected': 'Account Google collegato',
   'app.connectFailed': 'Collegamento non riuscito: {reason}',
   'app.emailSent': 'Email inviata',
+  'app.emailSentUndelivered': 'Inviato, ma questi indirizzi non sono stati recapitati: {addresses}',
   'app.syncStalled':
     'La sincronizzazione non sta avanzando: controlla l’account nelle impostazioni (archiviazione o storage potrebbero fallire).',
   'app.emailSentInFolder': 'Email inviata — copia salvata in {folder}',

@@ -44,7 +44,7 @@ interface ComposeProps {
   initialDraft: DraftPayload | null
   seed: ComposeSeed | null
   onClose: () => void
-  onSent: (warning?: string, sentFolder?: string) => void
+  onSent: (warning?: string, sentFolder?: string, undelivered?: string[]) => void
   onSaved: () => void
   onDeleted: () => void
 }
@@ -362,7 +362,7 @@ export function Compose({
     setError(null)
     try {
       const result = await api.send(payload)
-      onSent(result.warning, result.sentFolder)
+      onSent(result.warning, result.sentFolder, result.undelivered)
     } catch (err) {
       sendingRef.current = false
       setError(errorText(err, t))

@@ -340,7 +340,7 @@ export const api = {
       body: JSON.stringify({ ids, action, target }),
     })
   },
-  send(payload: SendPayload): Promise<{ ok: boolean; warning?: string; sentFolder?: string }> {
+  send(payload: SendPayload): Promise<{ ok: boolean; warning?: string; sentFolder?: string; undelivered?: string[] }> {
     return request('/api/messages/send', { method: 'POST', body: JSON.stringify(payload) })
   },
   draft(id: string): Promise<{ draft: DraftPayload }> {
