@@ -62,6 +62,10 @@ export function Onboarding({ accounts, storage, health, busy, error, onCancel, o
 
   const preset = findPreset(presetId) ?? initial
   const relayMeta = findRelayProvider(relayProvider)
+  // Cloudflare stores its account ID in the relay "domain" field. The label
+  // is picked with a ternary of literal t() keys, not a computed key, so
+  // tests/i18n-keys.test.ts can still check every key exists.
+  const relayUsesAccountId = relayMeta?.domainLabel === 'accountId'
   const relaySentCopyTargets = useMemo(
     () => accounts.filter((item) => item.kind === 'imap' && item.connected),
     [accounts],
@@ -165,7 +169,9 @@ export function Onboarding({ accounts, storage, health, busy, error, onCancel, o
       return
     }
     if (relayMeta?.needsDomain && !relayDomain) {
-      setLocalError(t('onboarding.relayDomainRequired'))
+      setLocalError(
+        relayUsesAccountId ? t('onboarding.relayAccountIdRequired') : t('onboarding.relayDomainRequired'),
+      )
       return
     }
     if (relayStorage === 'imap' && !relaySentCopyTarget) {
@@ -554,7 +560,9 @@ export function Onboarding({ accounts, storage, health, busy, error, onCancel, o
                 {relayMeta?.needsDomain ? (
                   <div className="grid grid-cols-[1fr_auto] gap-2">
                     <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-muted">{t('onboarding.relayDomain')}</span>
+                      <span className="mb-1 block font-medium text-muted">
+                        {relayUsesAccountId ? t('onboarding.relayAccountId') : t('onboarding.relayDomain')}
+                      </span>
                       <input
                         value={relayDomain}
                         onChange={(event) => setRelayDomain(event.target.value)}

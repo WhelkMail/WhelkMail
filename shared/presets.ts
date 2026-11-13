@@ -108,6 +108,9 @@ export interface RelayProviderOption {
   manual?: boolean
   // As MailPreset.labelKey: set when the label isn't a brand name.
   labelKey?: string
+  // What the relayDomain field holds when needsDomain is set, which picks its
+  // label and error message: a sending domain (default) or an account ID.
+  domainLabel?: 'domain' | 'accountId'
 }
 
 export const RELAY_PROVIDERS: RelayProviderOption[] = [
