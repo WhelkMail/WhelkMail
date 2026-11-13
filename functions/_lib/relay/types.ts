@@ -18,11 +18,17 @@ export interface RelayMessage {
 
 export interface RelayResult {
   providerMessageId: string | null
+  // Recipients the provider accepted the message for but will not deliver
+  // to (permanent bounce, suppression list). The send still succeeds.
+  undelivered?: string[]
 }
 
 export interface RelayAdapter {
   provider: string
   label: string
   maxAttachmentBytes: number
+  // Most recipients one message may have, to + cc + bcc combined, for
+  // providers that limit it. Checked in send.ts before anything is sent.
+  maxRecipients?: number
   send(message: RelayMessage): Promise<RelayResult>
 }

@@ -18,6 +18,7 @@ import { queueSync } from '../../_lib/sync'
 import { buildMime, snippetOf } from '../../_lib/mime'
 import { normalizeMessageId, threadKeyFor } from '../../_lib/mail/thread-key'
 import { getRelay, type RelayAdapter } from '../../_lib/relay'
+import { recipientLimitExceeded } from '../../_lib/relay/validation'
 import { copyObjectKey, getStorage, rescueCandidates } from '../../_lib/storage'
 
 interface PersistInput {
@@ -252,6 +253,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       'attachment_too_large',
     )
   }
+  const tooManyRecipients = recipientLimitExceeded(
+    relay,
+    input.to.length + input.cc.length + input.bcc.length,
+  )
+  if (tooManyRecipients) {
+    return tooManyRecipients
+  }
   const mime = buildMime({
     from: { name: account.display_name, email: account.email },
     to,
@@ -293,7 +301,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   try {
-    await relay.send({
+    const relayResult = await relay.send({
       fromName: account.display_name,
       fromEmail: account.email,
       to: input.to,
@@ -358,7 +366,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         () => undefined,
       )
     }
-    return json({ ok: true, message: relayMessageSummary(row, account), warning }, 201)
+    // Recipients the relay accepted but won't deliver to (e.g. Cloudflare's
+    // permanent_bounces): still a success, but the client gets the list so it
+    // can warn about them.
+    const undelivered = relayResult.undelivered ?? []
+    return json(
+      {
+        ok: true,
+        message: relayMessageSummary(row, account),
+        warning,
+        ...(undelivered.length > 0 ? { undelivered } : {}),
+      },
+      201,
+    )
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'Send failed'
     await persistRelayMessage({

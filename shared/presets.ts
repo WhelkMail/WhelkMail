@@ -108,6 +108,9 @@ export interface RelayProviderOption {
   manual?: boolean
   // As MailPreset.labelKey: set when the label isn't a brand name.
   labelKey?: string
+  // What the relayDomain field holds when needsDomain is set, which picks its
+  // label and error message: a sending domain (default) or an account ID.
+  domainLabel?: 'domain' | 'accountId'
 }
 
 export const RELAY_PROVIDERS: RelayProviderOption[] = [
@@ -118,6 +121,7 @@ export const RELAY_PROVIDERS: RelayProviderOption[] = [
   { id: 'sendgrid', label: 'SendGrid', needsSecret: false, needsDomain: false },
   { id: 'mailjet', label: 'Mailjet', needsSecret: true, needsDomain: false },
   { id: 'postmark', label: 'Postmark', needsSecret: false, needsDomain: false },
+  { id: 'cloudflare', label: 'Cloudflare Email Service', needsSecret: false, needsDomain: true, domainLabel: 'accountId' },
   { id: 'custom', label: 'SMTP personalizzato', labelKey: 'relayProviders.custom.label', needsSecret: false, needsDomain: false, manual: true },
 ]
 

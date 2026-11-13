@@ -329,7 +329,15 @@ For send-only accounts:
 4. Paste it in the account creation form or in Settings.
 5. Choose where the sent copies and drafts go: **Google Drive**, **R2** or **another account's mailbox**. The third option appends every message to the Sent folder (and every draft to the Drafts folder) of a connected IMAP account instead of storing them on Drive/R2; it is an alternative, not an addition.
 
-Supported providers: SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark.
+Supported providers: SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark, Cloudflare Email Service.
+
+**Cloudflare Email Service** ([docs](https://developers.cloudflare.com/email-service/api/send-emails/rest-api/)):
+
+- API key: an account API token with the **Email Sending: Edit** permission.
+- Account ID: your Cloudflare account ID (dashboard → account home, or the URL after `dash.cloudflare.com/`).
+- The sending domain must be onboarded under **Email Service → Email Sending** in the same account. Each subdomain is onboarded separately.
+- By default, a message with any recipient on Cloudflare's suppression list is rejected outright (error `10205`). Turn on **Drop suppressed recipients** for the sending domain to send to the other recipients instead; WhelkMail then reports the dropped addresses as not delivered.
+- The custom SMTP option can't be used with Cloudflare's SMTP endpoint (`smtp.mx.cloudflare.net`): Workers block TCP sockets to Cloudflare's own IP ranges.
 
 ## 4. Optional R2 archive
 

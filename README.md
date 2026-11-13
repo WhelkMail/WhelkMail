@@ -51,7 +51,7 @@ Connect Gmail, Outlook, iCloud, Fastmail, Yahoo or a custom domain and get a fam
 - Password, app-password, Google OAuth2 and Microsoft OAuth2 (XOAUTH2) authentication.
 - Sending through each account's own SMTP server.
 - **Replies from the right address**: when a domain only forwards to a provider mailbox (`EMAIL@DOMAIN.IT` → `EMAIL@PROVIDER.IT`), a reply leaves from the domain account automatically — the app matches the message's To/Cc and forwarding headers (`Delivered-To`, `X-Original-To`, `Envelope-To`, `Received … for`) against its accounts. Settings → Accounts → **Reply as** forces a different sender for a mailbox.
-- Send-only "relay" accounts (SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark or a custom SMTP server with manual host/port/credentials) for domains without SMTP. Sent copies and drafts go to Google Drive, Cloudflare R2, or the Sent/Drafts folders of an IMAP account you already read — pick one destination per account.
+- Send-only "relay" accounts (SMTP2GO, Resend, Mailgun, Brevo, SendGrid, Mailjet, Postmark, Cloudflare Email Service or a custom SMTP server with manual host/port/credentials) for domains without SMTP. Sent copies and drafts go to Google Drive, Cloudflare R2, or the Sent/Drafts folders of an IMAP account you already read — pick one destination per account.
 - Optional archive and provider cleanup for IMAP: archive bodies and attachments, then move the original to the provider Trash.
 
 ### Organization

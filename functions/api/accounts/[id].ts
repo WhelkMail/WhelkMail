@@ -7,6 +7,7 @@ import { recordCleanupFailures } from '../../_lib/storage/cleanup-log'
 import { backfillAccountLabel } from '../../_lib/filters'
 import type { Env } from '../../_lib/env'
 import { fail, json, readJson } from '../../_lib/http'
+import { relayDomainMissing } from '../../_lib/relay/validation'
 
 export const onRequestPatch: PagesFunction<Env> = async (context) => {
   const id = context.params.id as string
@@ -192,7 +193,7 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
       return fail('Relay API secret is required', 400, undefined, 'relay_secret_required')
     }
     if (providerMeta.needsDomain && !relayDomain) {
-      return fail('Mailgun domain is required', 400, undefined, 'relay_domain_required')
+      return relayDomainMissing(providerMeta)
     }
   }
 

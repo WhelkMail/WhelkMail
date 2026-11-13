@@ -1831,7 +1831,7 @@ export default function App() {
             setComposeSeed(null)
             setRefreshKey((key) => key + 1)
           }}
-          onSent={(warning, sentFolder) => {
+          onSent={(warning, sentFolder, undelivered) => {
             dismissCompose()
             setComposeDraft(null)
             setComposeSeed(null)
@@ -1840,8 +1840,14 @@ export default function App() {
             setQuery('')
             setSelectedMessageId(null)
             setRefreshKey((key) => key + 1)
+            // A relay can accept a message but drop some recipients (bounced or
+            // suppressed). Show that alongside any other warning; otherwise
+            // fall back to the usual "sent" notice.
+            const undeliveredNotice = undelivered && undelivered.length > 0
+              ? t('app.emailSentUndelivered', { addresses: undelivered.join(', ') })
+              : null
             setNotice(
-              warning ??
+              [warning, undeliveredNotice].filter(Boolean).join(' ') ||
                 (sentFolder
                   ? t('app.emailSentInFolder', { folder: sentFolder })
                   : t('app.emailSent')),

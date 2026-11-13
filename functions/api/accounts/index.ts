@@ -7,6 +7,7 @@ import type { Env } from '../../_lib/env'
 import { ensureGlobalLabel } from '../../_lib/labels'
 import { googleMailConfigured } from '../../_lib/google/oauth'
 import { fail, json, readJson } from '../../_lib/http'
+import { relayDomainMissing } from '../../_lib/relay/validation'
 import { isSchemaError } from '../../_lib/schema'
 import { microsoftConfigured } from '../../_lib/microsoft/oauth'
 
@@ -149,7 +150,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       return fail('Relay API secret is required', 400, undefined, 'relay_secret_required')
     }
     if (providerMeta.needsDomain && !input.relayDomain) {
-      return fail('Mailgun domain is required', 400, undefined, 'relay_domain_required')
+      return relayDomainMissing(providerMeta)
     }
     const keyEncrypted = apiKey ? await encryptString(context.env, apiKey) : null
     const secretEncrypted = input.relayApiSecret

@@ -131,6 +131,10 @@ function AccountCard({
   const [relayRegion, setRelayRegion] = useState('us')
   const isImap = account.kind === 'imap'
   const relayMeta = findRelayProvider(relayProvider)
+  // Cloudflare stores its account ID in the relay "domain" field. The label
+  // is picked with a ternary of literal t() keys, not a computed key, so
+  // tests/i18n-keys.test.ts can still check every key exists.
+  const relayUsesAccountId = relayMeta?.domainLabel === 'accountId'
   const sentCopyTargets = accounts.filter(
     (item) => item.kind === 'imap' && item.id !== account.id && item.connected,
   )
@@ -712,7 +716,7 @@ function AccountCard({
                   <input
                     value={relayDomain}
                     onChange={(event) => setRelayDomain(event.target.value)}
-                    placeholder={t('settings.relayDomain')}
+                    placeholder={relayUsesAccountId ? t('settings.relayAccountId') : t('settings.relayDomain')}
                     className="w-full rounded-lg border border-line px-2 py-1.5 text-xs outline-none focus:border-brand"
                   />
                   <select
