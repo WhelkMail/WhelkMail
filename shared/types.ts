@@ -1,3 +1,5 @@
+import type { ForwarderVerdict } from './forwarding'
+
 export type AccountKind = 'imap' | 'relay'
 /**
  * `provider` keeps mail on the mail server. Relay accounts choose `drive` or
@@ -325,6 +327,11 @@ export interface MessageDetail extends MessageSummary {
    * Authentication-Results. Forwarding headers only count for these domains.
    */
   verifiedDomains: string[]
+  /**
+   * Verdicts of forwarders with provider-specific checks that identify the
+   * message (`forwardingVerdicts()`). Empty when none applies.
+   */
+  forwarding: ForwarderVerdict[]
   /** RFC 5322 Message-ID, used as In-Reply-To when answering. */
   messageId: string | null
   /** Reference chain of this message, extended when answering. */
