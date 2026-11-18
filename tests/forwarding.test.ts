@@ -1,4 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import type { Header } from 'postal-mime'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  type Forwarder,
+  type Receiver,
+  type ReceivingHop,
+  findReceivingHop,
+  forwardingVerdicts,
+} from '../functions/_lib/mail/forwarding'
 import { dkimDomain, parseAuthResults, parseReceived } from '../functions/_lib/mail/forwarding/headers'
 
 describe('parseReceived', () => {
@@ -211,5 +219,69 @@ describe('parseAuthResults', () => {
     const parsed = parseAuthResults('mx.cloudflare.net 1; dkim=pass header.d=Mydomain.Example. header.s=s1')
     expect(parsed.authservId).toBe('mx.cloudflare.net')
     expect(dkimDomain(parsed.results[0])).toBe('mydomain.example')
+  })
+})
+
+describe('forwardingVerdicts', () => {
+  const headers: Header[] = [
+    { key: 'received', originalKey: 'Received', value: 'from fwd.example (fwd.example. [192.0.2.1]) by mx.example; date' },
+    { key: 'x-forwarded-for', originalKey: 'X-Forwarded-For', value: 'shop@mydomain.example me@inbox.example' },
+  ]
+  const hop: ReceivingHop = {
+    receiver: 'test-receiver',
+    index: 0,
+    received: parseReceived(headers[0].value),
+    authResults: null,
+  }
+  const receiver: Receiver = { id: 'test-receiver', findHop: () => hop }
+  const blind: Receiver = { id: 'blind', findHop: () => null }
+  const forwarder = (overrides: Partial<Forwarder> = {}): Forwarder => ({
+    id: 'test-forwarder',
+    identify: () => ({ scope: null }),
+    validate: () => ({ alias: 'Shop@mydomain.example', domain: 'MyDomain.example' }),
+    ...overrides,
+  })
+
+  it('returns nothing when no forwarder is registered, as on main', () => {
+    expect(forwardingVerdicts({ headers })).toEqual([])
+  })
+
+  it('returns nothing when no forwarder identifies the message', () => {
+    expect(forwardingVerdicts({ headers }, [receiver], [forwarder({ identify: () => undefined })])).toEqual([])
+  })
+
+  it("carries the forwarder's validated record, lower-cased", () => {
+    expect(forwardingVerdicts({ headers }, [receiver], [forwarder()])).toEqual([
+      { forwarder: 'test-forwarder', scope: null, record: { alias: 'shop@mydomain.example', domain: 'mydomain.example' } },
+    ])
+  })
+
+  it("fails closed when no receiver recognises the hop, without validating", () => {
+    const validate = vi.fn(() => ({ alias: 'shop@mydomain.example', domain: 'mydomain.example' }))
+    expect(forwardingVerdicts({ headers }, [blind], [forwarder({ validate })])).toEqual([
+      { forwarder: 'test-forwarder', scope: null, record: null },
+    ])
+    expect(validate).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when validation fails', () => {
+    expect(forwardingVerdicts({ headers }, [receiver], [forwarder({ validate: () => null })])[0].record).toBeNull()
+  })
+
+  it("drops a record whose alias isn't on the domain the hop is tied to", () => {
+    const untied = forwarder({ validate: () => ({ alias: 'shop@mydomain.example', domain: 'otherdomain.example' }) })
+    expect(forwardingVerdicts({ headers }, [receiver], [untied])[0].record).toBeNull()
+    const sub = forwarder({ validate: () => ({ alias: 'shop@sub.mydomain.example', domain: 'mydomain.example' }) })
+    expect(forwardingVerdicts({ headers }, [receiver], [sub])[0].record).toBeNull()
+  })
+
+  it('keeps the scope a forwarder gives', () => {
+    const scoped = forwarder({ identify: () => ({ scope: ['MyDomain.example'] }) })
+    expect(forwardingVerdicts({ headers }, [receiver], [scoped])[0].scope).toEqual(['mydomain.example'])
+  })
+
+  it('uses the first receiver that recognises the hop', () => {
+    expect(findReceivingHop(headers, [blind, receiver])).toBe(hop)
+    expect(findReceivingHop(headers, [])).toBeNull()
   })
 })
