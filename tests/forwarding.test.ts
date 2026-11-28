@@ -54,6 +54,13 @@ describe('parseReceived', () => {
     ).toMatchObject({ helo: 'helo.example', host: 'host.example', ip: '192.0.2.1', by: 'mx.example' })
   })
 
+  it("doesn't read a for clause from inside a quoted string", () => {
+    expect(
+      parseReceived('from helo.example (peer.example [192.0.2.1]) by mx.example with SMTP id "abc for <forged@example.org>" for <real@example.org>; date'),
+    ).toMatchObject({ by: 'mx.example', for: 'real@example.org' })
+    expect(parseReceived('from helo.example (peer.example [192.0.2.1]) by mx.example for <"a b"@example.org>; date').for).toBe('a b@example.org')
+  })
+
   it('reads a hop with no from clause', () => {
     expect(parseReceived('by 2002:a05:7108:63a1:b0:62f:c5fe:dec5 with SMTP id a1csp2206408gdr;        Tue, 17 Nov 2026 13:39:32 -0800 (PST)')).toEqual({
       helo: null,
@@ -109,7 +116,7 @@ describe('parseAuthResults', () => {
       'spf=pass',
       'dkim=pass attacker.example',
     ])
-    expect(parsed.results[0].props['smtp.mailfrom']).toBe('x;dkim=pass header.d=mydomain.example (y)')
+    expect(parsed.results[0].props['smtp.mailfrom']).toBe('x;dkim=pass header.d=mydomain.example (y)@attacker.example')
   })
 
   it("doesn't read a property from inside a quoted value", () => {
@@ -120,6 +127,18 @@ describe('parseAuthResults', () => {
   it('unescapes quoted values and keeps parentheses inside them', () => {
     const parsed = parseAuthResults('mx.example; dkim=pass header.d=example.org header.foo="a \\"(b)\\" c"')
     expect(parsed.results[0].props['header.foo']).toBe('a "(b)" c')
+  })
+
+  it('reads results and values with comments where whitespace may go', () => {
+    const parsed = parseAuthResults('mx.example (v1); (checked) dkim=pass header.d=(domain) example.org (ok) header.s=s1')
+    expect(parsed.authservId).toBe('mx.example')
+    expect(parsed.results).toEqual([{ method: 'dkim', result: 'pass', props: { 'header.d': 'example.org', 'header.s': 's1' } }])
+  })
+
+  it('keeps the domain after a quoted local part', () => {
+    const parsed = parseAuthResults('mx.example; dkim=pass header.i="user"@example.org')
+    expect(parsed.results[0].props['header.i']).toBe('user@example.org')
+    expect(dkimDomain(parsed.results[0])).toBe('example.org')
   })
 
   it('reads header.d and drops the version and a trailing dot', () => {

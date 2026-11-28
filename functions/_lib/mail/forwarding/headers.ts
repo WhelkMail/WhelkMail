@@ -107,6 +107,17 @@ function lex(value: string): Lexed {
   return { text, comments, quoted }
 }
 
+/**
+ * `text` with each comment replaced by a space, as RFC 5322 allows a comment
+ * anywhere whitespace may go. Quoted strings stay placeholders, so keywords and
+ * separators are still only found outside them.
+ */
+const dropComments = (text: string): string => text.replace(/\uE000\d+\uE000/g, ' ')
+
+// One token: a run of quoted-string placeholders and other characters, so a
+// quoted local part keeps its domain (`"user"@example.org`).
+const TOKEN = '(?:\uE001\\d+\uE001|[^\\s;()<>\uE000\uE001])+'
+
 /** `text` with comments dropped and quoted strings put back, unescaped. */
 const plain = (text: string, lexed: Lexed): string =>
   text.replace(PLACEHOLDER, (match, index: string) => (match.startsWith(QUOTED) ? (lexed.quoted[Number(index)] ?? '') : ' '))
@@ -140,9 +151,13 @@ export function parseReceived(value: string): ReceivedHeader {
   }
 
   // The by and for clauses come after the from clause and its comment.
-  const rest = plain(from ? clauses.slice(from[0].length) : clauses, lexed)
-  const by = rest.match(/(?:^|\s)by\s+([^\s;()]+)/i)?.[1]?.toLowerCase() ?? null
-  const forAddress = rest.match(/(?:^|\s)for\s+<?([^\s<>;]+@[^\s<>;]+)>?/i)?.[1]?.toLowerCase() ?? null
+  // Quoted strings stay opaque while the keywords are found; only the chosen
+  // values are decoded.
+  const rest = dropComments(from ? clauses.slice(from[0].length) : clauses)
+  const byToken = rest.match(new RegExp(`(?:^|\\s)by\\s+(${TOKEN})`, 'i'))?.[1]
+  const forToken = rest.match(new RegExp(`(?:^|\\s)for\\s+<?(${TOKEN}@${TOKEN})>?`, 'i'))?.[1]
+  const by = byToken ? plain(byToken, lexed).toLowerCase() : null
+  const forAddress = forToken ? plain(forToken, lexed).toLowerCase() : null
 
   return {
     helo,
@@ -178,7 +193,7 @@ export interface AuthResults {
  */
 export function parseAuthResults(value: string): AuthResults {
   const lexed = lex(value)
-  const [head = '', ...parts] = lexed.text.split(';')
+  const [head = '', ...parts] = dropComments(lexed.text).split(';')
   const authservId = plain(head, lexed).trim().split(/\s+/)[0]?.toLowerCase() ?? ''
   const results: AuthResult[] = []
   for (const part of parts) {
@@ -188,7 +203,7 @@ export function parseAuthResults(value: string): AuthResults {
     }
     const props: Record<string, string> = {}
     // Quoted strings are placeholders here, so a key can't be read from inside one.
-    for (const prop of part.slice(verdict[0].length).matchAll(/([a-z0-9_-]+\.[a-z0-9_.-]+)\s*=\s*(\uE001\d+\uE001|[^\s;\uE000\uE001]+)/gi)) {
+    for (const prop of part.slice(verdict[0].length).matchAll(new RegExp(`([a-z0-9_-]+\\.[a-z0-9_.-]+)\\s*=\\s*((?:\\uE001\\d+\\uE001|[^\\s;\\uE001])+)`, 'gi'))) {
       props[prop[1].toLowerCase()] = plain(prop[2], lexed)
     }
     results.push({ method: verdict[1].toLowerCase(), result: verdict[2].toLowerCase(), props })
