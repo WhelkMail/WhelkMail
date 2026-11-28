@@ -1,5 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import type { Header } from 'postal-mime'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  type Forwarder,
+  type Receiver,
+  type ReceivingHop,
+  findReceivingHop,
+  forwardingVerdicts,
+} from '../functions/_lib/mail/forwarding'
 import { dkimDomain, parseAuthResults, parseReceived } from '../functions/_lib/mail/forwarding/headers'
+import { aliasAddresses, parseHeaders, verifiedDomains } from '../functions/_lib/mail/parse'
+import { type ForwarderVerdict, governedForwarded } from '../shared/forwarding'
+import { pickDomainAlias, pickReplyAccount } from '../shared/from-address'
 
 describe('parseReceived', () => {
   it("reads the receiving server's record of the peer, not the HELO name", () => {
@@ -211,5 +222,149 @@ describe('parseAuthResults', () => {
     const parsed = parseAuthResults('mx.cloudflare.net 1; dkim=pass header.d=Mydomain.Example. header.s=s1')
     expect(parsed.authservId).toBe('mx.cloudflare.net')
     expect(dkimDomain(parsed.results[0])).toBe('mydomain.example')
+  })
+})
+
+describe('forwardingVerdicts', () => {
+  const headers: Header[] = [
+    { key: 'received', originalKey: 'Received', value: 'from fwd.example (fwd.example. [192.0.2.1]) by mx.example; date' },
+    { key: 'x-forwarded-for', originalKey: 'X-Forwarded-For', value: 'shop@mydomain.example me@inbox.example' },
+  ]
+  const hop: ReceivingHop = {
+    receiver: 'test-receiver',
+    index: 0,
+    received: parseReceived(headers[0].value),
+    authResults: null,
+  }
+  const receiver: Receiver = { id: 'test-receiver', findHop: () => hop }
+  const blind: Receiver = { id: 'blind', findHop: () => null }
+  const forwarder = (overrides: Partial<Forwarder> = {}): Forwarder => ({
+    id: 'test-forwarder',
+    identify: () => ({ scope: null }),
+    validate: () => ({ alias: 'Shop@mydomain.example', domain: 'MyDomain.example' }),
+    ...overrides,
+  })
+
+  it('returns nothing when no forwarder is registered, as on main', () => {
+    expect(forwardingVerdicts({ headers })).toEqual([])
+  })
+
+  it('returns nothing when no forwarder identifies the message', () => {
+    expect(forwardingVerdicts({ headers }, [receiver], [forwarder({ identify: () => undefined })])).toEqual([])
+  })
+
+  it("carries the forwarder's validated record, lower-cased", () => {
+    expect(forwardingVerdicts({ headers }, [receiver], [forwarder()])).toEqual([
+      { forwarder: 'test-forwarder', scope: null, record: { alias: 'shop@mydomain.example', domain: 'mydomain.example' } },
+    ])
+  })
+
+  it("fails closed when no receiver recognises the hop, without validating", () => {
+    const validate = vi.fn(() => ({ alias: 'shop@mydomain.example', domain: 'mydomain.example' }))
+    expect(forwardingVerdicts({ headers }, [blind], [forwarder({ validate })])).toEqual([
+      { forwarder: 'test-forwarder', scope: null, record: null },
+    ])
+    expect(validate).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when validation fails', () => {
+    expect(forwardingVerdicts({ headers }, [receiver], [forwarder({ validate: () => null })])[0].record).toBeNull()
+  })
+
+  it("drops a record whose alias isn't on the domain the hop is tied to", () => {
+    const untied = forwarder({ validate: () => ({ alias: 'shop@mydomain.example', domain: 'otherdomain.example' }) })
+    expect(forwardingVerdicts({ headers }, [receiver], [untied])[0].record).toBeNull()
+    const sub = forwarder({ validate: () => ({ alias: 'shop@sub.mydomain.example', domain: 'mydomain.example' }) })
+    expect(forwardingVerdicts({ headers }, [receiver], [sub])[0].record).toBeNull()
+  })
+
+  it('keeps the scope a forwarder gives', () => {
+    const scoped = forwarder({ identify: () => ({ scope: ['MyDomain.example'] }) })
+    expect(forwardingVerdicts({ headers }, [receiver], [scoped])[0].scope).toEqual(['mydomain.example'])
+  })
+
+  it('uses the first receiver that recognises the hop', () => {
+    expect(findReceivingHop(headers, [blind, receiver])).toBe(hop)
+    expect(findReceivingHop(headers, [])).toBeNull()
+  })
+})
+
+describe('governedForwarded', () => {
+  const forwarded = ['me@inbox.example', 'shop@mydomain.example', 'forged@mydomain.example', 'a@elsewhere.example']
+  const valid: ForwarderVerdict = {
+    forwarder: 'test-forwarder',
+    scope: null,
+    record: { alias: 'shop@mydomain.example', domain: 'mydomain.example' },
+  }
+
+  it('leaves the list unchanged without verdicts', () => {
+    expect(governedForwarded(forwarded, [])).toBe(forwarded)
+  })
+
+  it("keeps only the forwarder's record on governed domains", () => {
+    expect(governedForwarded(forwarded, [valid], 'me@inbox.example')).toEqual(['me@inbox.example', 'shop@mydomain.example'])
+  })
+
+  it('trusts no governed address when validation failed', () => {
+    expect(governedForwarded(forwarded, [{ ...valid, record: null }], 'me@inbox.example')).toEqual(['me@inbox.example'])
+  })
+
+  it('leaves domains outside the scope alone', () => {
+    expect(governedForwarded(forwarded, [{ ...valid, scope: ['mydomain.example'], record: null }])).toEqual([
+      'me@inbox.example',
+      'a@elsewhere.example',
+    ])
+  })
+
+  it('needs every governing verdict to vouch for an address', () => {
+    expect(governedForwarded(forwarded, [valid, { ...valid, forwarder: 'other', record: null }], 'me@inbox.example')).toEqual([
+      'me@inbox.example',
+    ])
+  })
+})
+
+describe('replay through another Cloudflare zone (real header order, addresses replaced)', () => {
+  // Gmail's view of a message forwarded by another zone's Email Routing
+  // (otherdomain.example), carrying a forged alias for mydomain.example below
+  // Cloudflare's own block.
+  const replay = [
+    'Delivered-To: me+tag@gmail.example',
+    'Received: by 2002:a05:7108:63a1::0 with SMTP id a1csp2206408gdr; Tue, 17 Nov 2026 13:39:32 -0800',
+    'Return-Path: <cfbounces+ndrdrop@otherdomain.example>',
+    'Received: from ba-ee.cloudflare-email.net (ba-ee.cloudflare-email.net. [104.30.10.44]) by mx.google.com with ESMTPS id abc for <me+tag@gmail.example>; Tue, 17 Nov 2026 13:39:31 -0800',
+    // As if the message also carried a genuinely signed copy from mydomain.example.
+    'Authentication-Results: mx.google.com; dkim=pass header.i=@otherdomain.example header.s=cf2024-1; dkim=pass header.i=@mydomain.example header.s=cf2024-1; spf=pass smtp.mailfrom=cfbounces+ndrdrop@otherdomain.example',
+    'X-Forwarded-To: me+tag@gmail.example',
+    'X-Forwarded-For: test@otherdomain.example me+tag@gmail.example',
+    'Received: from bg-bag.cloudflare-smtp.net (104.30.16.106) by cloudflare-email.net (cloudflare) id mEGiICPPdocG for <test@otherdomain.example>; Tue, 17 Nov 2026 21:39:30 +0000',
+    'From: "Test" <header-test@notifications.mydomain.example>',
+    'To: test@otherdomain.example',
+    'X-Original-To: proxmox@mydomain.example',
+    'X-Forwarded-For: proxmox@mydomain.example me@gmail.example',
+  ].join('\r\n')
+  const relay = { id: 'relay', email: 'relay@mydomain.example', anyAddress: true }
+
+  it('is picked by the DKIM rule alone, which a forwarder verdict then stops', async () => {
+    const email = await parseHeaders(replay)
+    const base = {
+      accounts: [relay],
+      receivingEmail: 'me+tag@gmail.example',
+      sent: false,
+      from: 'header-test@notifications.mydomain.example',
+      forwarded: aliasAddresses(email),
+      verifiedDomains: verifiedDomains(email),
+      recipients: ['test@otherdomain.example'],
+    }
+    expect(pickReplyAccount(base)).toEqual({ accountId: 'relay', alias: 'proxmox@mydomain.example' })
+
+    // A forwarder that identifies the message but whose record is tied to
+    // otherdomain.example: nothing on mydomain.example is trusted.
+    const forwarding: ForwarderVerdict[] = [
+      { forwarder: 'test-forwarder', scope: null, record: { alias: 'test@otherdomain.example', domain: 'otherdomain.example' } },
+    ]
+    expect(pickReplyAccount({ ...base, forwarding })).toBeNull()
+    expect(
+      pickDomainAlias({ ...base, forwarding, domain: 'mydomain.example', recipients: base.recipients }),
+    ).toBeNull()
   })
 })

@@ -16,6 +16,7 @@ import {
   toMailbox,
   toMailboxes,
 } from '../../../_lib/mail/parse'
+import { forwardingVerdicts } from '../../../_lib/mail/forwarding'
 
 function toBytes(value: unknown): Uint8Array | null {
   if (value instanceof Uint8Array) {
@@ -141,6 +142,7 @@ async function relayDetail(env: Env, id: string): Promise<MessageDetail | null> 
     status: row.status === 'failed' ? 'failed' : row.status === 'draft' ? 'draft' : 'sent',
     aliasAddresses: [],
     verifiedDomains: [],
+    forwarding: [],
     messageId: row.message_id ?? null,
     references: null,
     threadKey: row.thread_key ?? null,
@@ -210,6 +212,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     status: loaded.folder === 'draft' ? 'draft' : 'sent',
     aliasAddresses: aliasAddresses(email),
     verifiedDomains: verifiedDomains(email),
+    forwarding: forwardingVerdicts(email),
     messageId: email.messageId ?? null,
     references: email.references ?? null,
     threadKey,

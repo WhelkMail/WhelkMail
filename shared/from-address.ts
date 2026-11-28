@@ -1,3 +1,5 @@
+import { type ForwarderVerdict, governedForwarded } from './forwarding'
+
 /**
  * Sending from another address on a relay account's domain.
  *
@@ -58,6 +60,11 @@ export interface DomainAliasInput {
   verifiedDomains: string[]
   /** To and Cc of the message. */
   recipients: string[]
+  /**
+   * Forwarder verdicts for the message (`MessageDetail.forwarding`). A domain a
+   * verdict governs only trusts the forwarder's validated record.
+   */
+  forwarding?: ForwarderVerdict[]
   /** Domain of the sending account. */
   domain: string
   /**
@@ -91,13 +98,14 @@ export function pickDomainAlias(input: DomainAliasInput): string | null {
   const receiving = input.receivingEmail?.trim().toLowerCase() ?? ''
   let receivingSeen = false
   if (input.verifiedDomains.some((verified) => verified.toLowerCase() === domain)) {
-    const onDomainForwarded = input.forwarded.map((email) => email.trim().toLowerCase()).filter(onDomain)
+    const forwarded = governedForwarded(input.forwarded, input.forwarding ?? [], receiving)
+    const onDomainForwarded = forwarded.map((email) => email.trim().toLowerCase()).filter(onDomain)
     receivingSeen = onDomainForwarded.includes(receiving)
-    const forwarded = onDomainForwarded.find((email) => email !== receiving)
-    if (forwarded) {
+    const alias = onDomainForwarded.find((email) => email !== receiving)
+    if (alias) {
       // The forwarder's record wins even when it can't be sent from: falling
       // through to a lower header or To/Cc would pick a different address.
-      return sendable(forwarded)
+      return sendable(alias)
     }
   }
   const recipients = new Set(
@@ -127,6 +135,8 @@ export interface ReplyAccountInput {
   forwarded: string[]
   verifiedDomains: string[]
   recipients: string[]
+  /** Forwarder verdicts for the message, as in `DomainAliasInput`. */
+  forwarding?: ForwarderVerdict[]
 }
 
 /**
@@ -182,7 +192,7 @@ export function pickReplyAccount(input: ReplyAccountInput): { accountId: string;
     return resolution && resolution.kind !== 'ambiguous' ? result(resolution) : null
   }
   const verified = new Set(input.verifiedDomains.map((domain) => domain.toLowerCase()))
-  for (const email of input.forwarded) {
+  for (const email of governedForwarded(input.forwarded, input.forwarding ?? [], receiving)) {
     const address = email.trim().toLowerCase()
     // The receiving mailbox's own address often heads the headers on a shared
     // domain (Delivered-To): look past it for the alias.
