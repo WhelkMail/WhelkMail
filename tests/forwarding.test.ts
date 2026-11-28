@@ -141,6 +141,18 @@ describe('parseAuthResults', () => {
     expect(dkimDomain(parsed.results[0])).toBe('example.org')
   })
 
+  it('keeps whitespace inside a quoted value', () => {
+    const parsed = parseAuthResults('mx.example;   spf=pass   smtp.mailfrom="a  b"@example.org')
+    expect(parsed.results[0].props['smtp.mailfrom']).toBe('a  b@example.org')
+    expect(parseReceived('from helo.example (peer.example [192.0.2.1]) by mx.example for <"a  b"@example.org>; date').for).toBe('a  b@example.org')
+  })
+
+  it('accepts a method version', () => {
+    const parsed = parseAuthResults('mx.example; dkim/1=pass header.d=example.org; spf / 1 = fail smtp.mailfrom=x@example.org')
+    expect(parsed.results.map((result) => `${result.method}=${result.result}`)).toEqual(['dkim=pass', 'spf=fail'])
+    expect(dkimDomain(parsed.results[0])).toBe('example.org')
+  })
+
   it('reads header.d and drops the version and a trailing dot', () => {
     const parsed = parseAuthResults('mx.cloudflare.net 1; dkim=pass header.d=Mydomain.Example. header.s=s1')
     expect(parsed.authservId).toBe('mx.cloudflare.net')

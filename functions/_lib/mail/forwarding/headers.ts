@@ -55,7 +55,9 @@ interface Lexed {
  * unterminated quoted string or comment runs to the end of the header.
  */
 function lex(value: string): Lexed {
-  const input = value.replace(/[\uE000\uE001]/g, '').replace(/\s+/g, ' ')
+  // Unfold line breaks only: whitespace inside a quoted string is literal, so
+  // runs of it are collapsed below, outside quoted strings.
+  const input = value.replace(/[\uE000\uE001]/g, '').replace(/\r?\n(?=[ \t])/g, '')
   const comments: string[] = []
   const quoted: string[] = []
   let text = ''
@@ -94,6 +96,10 @@ function lex(value: string): Lexed {
       quote = ''
     } else if (char === '(') {
       depth = 1
+    } else if (/\s/.test(char)) {
+      if (!text.endsWith(' ')) {
+        text += ' '
+      }
     } else {
       text += char
     }
@@ -197,7 +203,8 @@ export function parseAuthResults(value: string): AuthResults {
   const authservId = plain(head, lexed).trim().split(/\s+/)[0]?.toLowerCase() ?? ''
   const results: AuthResult[] = []
   for (const part of parts) {
-    const verdict = part.match(/^\s*([a-z0-9_-]+)\s*=\s*([a-z0-9_-]+)/i)
+    // An optional method version may follow the method (`dkim/1=pass`).
+    const verdict = part.match(/^\s*([a-z0-9_-]+)\s*(?:\/\s*\d+\s*)?=\s*([a-z0-9_-]+)/i)
     if (!verdict) {
       continue
     }
