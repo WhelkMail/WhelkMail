@@ -184,9 +184,12 @@ export function parseReceived(value: string): ReceivedHeader {
   // The date follows the first `;` outside comments and quoted strings.
   const clauses = lexed.text.split(';')[0].trim()
   const from = clauses.match(/^from\s+([^\s\uE000\uE001]+)(?:\s*\uE000(\d+)\uE000)?/i)
-  const helo = from?.[1] ?? null
+  const fromToken = from?.[1] ?? null
+  const comment = from?.[2] !== undefined ? (lexed.comments[Number(from[2])] ?? '') : ''
   // Anything from `helo=` on (Exim's format) is the sender's claim, not a lookup.
-  const recorded = from?.[2] !== undefined ? (lexed.comments[Number(from[2])] ?? '').split(/\bhelo=/i)[0] : ''
+  const heloAt = comment.search(/\bhelo=/i)
+  const recorded = heloAt === -1 ? comment : comment.slice(0, heloAt)
+  const heloClaim = heloAt === -1 ? null : (comment.slice(heloAt + 'helo='.length).match(/^[^\s,()]+/)?.[0] ?? null)
 
   let ip: string | null = null
   for (const literal of recorded.matchAll(/\[([^\]]*)\]/g)) {
@@ -200,6 +203,16 @@ export function parseReceived(value: string): ReceivedHeader {
       host = token.replace(/\.$/, '').toLowerCase()
     }
   }
+
+  // Exim records the connecting IP in the from position when it has no verified
+  // host name, and the HELO separately as `helo=`. Only that marker makes the
+  // bracketed address the server's record: elsewhere (Postfix, Gmail) the from
+  // position is the sender's own HELO, which may be any address literal.
+  const fromLiteral = fromToken?.match(/^\[([^\]]*)\]$/)?.[1]
+  if (ip === null && heloClaim !== null && fromLiteral !== undefined) {
+    ip = validIp(fromLiteral)
+  }
+  const helo = heloClaim ?? fromToken
 
   // The by and for clauses come after the from clause and its comment.
   // Quoted strings stay opaque while the keywords are found; only the chosen

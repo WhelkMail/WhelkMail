@@ -45,7 +45,7 @@ describe('parseReceived', () => {
     // Exim records the sender's HELO in the comment, so nothing after helo= is a lookup.
     expect(
       parseReceived('from [198.51.100.7] (helo=x by evil.example for <forged@mydomain.example>) by mx.example (Postfix "by evil2.example") with ESMTPS id abc for <me@inbox.example>; date'),
-    ).toEqual({ helo: '[198.51.100.7]', host: null, ip: null, by: 'mx.example', for: 'me@inbox.example' })
+    ).toEqual({ helo: 'x', host: null, ip: '198.51.100.7', by: 'mx.example', for: 'me@inbox.example' })
   })
 
   it('reads the recorded host from a comment with nested comments and escapes', () => {
@@ -59,6 +59,28 @@ describe('parseReceived', () => {
       parseReceived('from helo.example (peer.example [192.0.2.1]) by mx.example with SMTP id "abc for <forged@example.org>" for <real@example.org>; date'),
     ).toMatchObject({ by: 'mx.example', for: 'real@example.org' })
     expect(parseReceived('from helo.example (peer.example [192.0.2.1]) by mx.example for <"a b"@example.org>; date').for).toBe('a b@example.org')
+  })
+
+  it("reads Exim's connecting IP from the from clause", () => {
+    expect(parseReceived('from [198.51.100.7] (helo=sender.example) by mx.example with esmtp id abc; date')).toEqual({
+      helo: 'sender.example',
+      host: null,
+      ip: '198.51.100.7',
+      by: 'mx.example',
+      for: null,
+    })
+    expect(parseReceived('from [IPv6:2001:db8::7] (helo=sender.example) by mx.example; date').ip).toBe('2001:db8::7')
+    expect(parseReceived('from [999.1.1.1] (helo=sender.example) by mx.example; date').ip).toBeNull()
+  })
+
+  it('never takes the IP from a HELO address literal', () => {
+    // Postfix and Gmail put the sender's own HELO in the from position.
+    expect(parseReceived('from [104.30.8.10] (unknown [198.51.100.7]) by mx.example; date')).toMatchObject({
+      helo: '[104.30.8.10]',
+      ip: '198.51.100.7',
+    })
+    expect(parseReceived('from [104.30.8.10] by mx.example; date').ip).toBeNull()
+    expect(parseReceived('from [104.30.8.10] (unknown) by mx.example; date').ip).toBeNull()
   })
 
   it('returns only valid IP addresses', () => {
