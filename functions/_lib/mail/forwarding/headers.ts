@@ -31,31 +31,116 @@ const HOSTNAME = /^[a-z0-9_](?:[a-z0-9_-]*[a-z0-9_])?(?:\.[a-z0-9_](?:[a-z0-9_-]
 const isIp = (token: string): boolean => IPV4.test(token) || IPV6.test(token)
 const stripIpv6Prefix = (ip: string): string => ip.replace(/^ipv6:/i, '')
 
+// Placeholders for comments and quoted strings, which can't occur in the text
+// itself: lex() removes these characters from the input first.
+const COMMENT = '\uE000'
+const QUOTED = '\uE001'
+const PLACEHOLDER = /[\uE000\uE001](\d+)[\uE000\uE001]/g
+
+interface Lexed {
+  /** The header with each comment and quoted string replaced by a placeholder. */
+  text: string
+  /** Text of each top-level comment, nested comments included. */
+  comments: string[]
+  /** Content of each quoted string, unescaped. */
+  quoted: string[]
+}
+
+/**
+ * Reads a structured header once, honouring quoted strings, backslash escapes
+ * and nested comments (RFC 5322), and sets each comment and quoted string aside
+ * behind a placeholder. Separators, `key=value` pairs and keywords are then
+ * only ever found in the header's own structure: a `;`, `(` or `by` inside a
+ * quoted value or a comment can't split a result or add a clause. An
+ * unterminated quoted string or comment runs to the end of the header.
+ */
+function lex(value: string): Lexed {
+  const input = value.replace(/[\uE000\uE001]/g, '').replace(/\s+/g, ' ')
+  const comments: string[] = []
+  const quoted: string[] = []
+  let text = ''
+  let depth = 0
+  let comment = ''
+  let quote: string | null = null
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i]
+    if (quote !== null) {
+      if (char === '\\' && i + 1 < input.length) {
+        quote += input[++i]
+      } else if (char === '"') {
+        text += `${QUOTED}${quoted.push(quote) - 1}${QUOTED}`
+        quote = null
+      } else {
+        quote += char
+      }
+    } else if (depth > 0) {
+      if (char === '\\' && i + 1 < input.length) {
+        comment += input[++i]
+      } else if (char === '(') {
+        depth++
+        comment += char
+      } else if (char === ')') {
+        depth--
+        if (depth === 0) {
+          text += ` ${COMMENT}${comments.push(comment) - 1}${COMMENT} `
+          comment = ''
+        } else {
+          comment += char
+        }
+      } else {
+        comment += char
+      }
+    } else if (char === '"') {
+      quote = ''
+    } else if (char === '(') {
+      depth = 1
+    } else {
+      text += char
+    }
+  }
+  if (quote !== null) {
+    text += `${QUOTED}${quoted.push(quote) - 1}${QUOTED}`
+  }
+  if (depth > 0) {
+    text += ` ${COMMENT}${comments.push(comment) - 1}${COMMENT} `
+  }
+  return { text, comments, quoted }
+}
+
+/** `text` with comments dropped and quoted strings put back, unescaped. */
+const plain = (text: string, lexed: Lexed): string =>
+  text.replace(PLACEHOLDER, (match, index: string) => (match.startsWith(QUOTED) ? (lexed.quoted[Number(index)] ?? '') : ' '))
+
 /**
  * Splits a `Received` header, such as
  * `from helo.example (host.example. [192.0.2.1]) by mx.example with ESMTPS id … for <me@example>; <date>`.
  *
- * The comment after the HELO name is where the receiving server records what
- * it saw: the reverse DNS name and the IP, in brackets or bare.
+ * The comment directly after the HELO name is where the receiving server
+ * records what it saw: the reverse DNS name and the IP, in brackets or bare.
+ * Other comments, which can repeat what the sender said (such as its HELO),
+ * are ignored when reading the `by` and `for` clauses.
  */
 export function parseReceived(value: string): ReceivedHeader {
-  const text = value.replace(/\s+/g, ' ').trim()
-  const from = text.match(/^from\s+(\S+)(?:\s+\(([^)]*)\))?/i)
+  const lexed = lex(value)
+  // The date follows the first `;` outside comments and quoted strings.
+  const clauses = lexed.text.split(';')[0].trim()
+  const from = clauses.match(/^from\s+([^\s\uE000\uE001]+)(?:\s*\uE000(\d+)\uE000)?/i)
   const helo = from?.[1] ?? null
-  const comment = from?.[2] ?? ''
+  // Anything from `helo=` on (Exim's format) is the sender's claim, not a lookup.
+  const comment = from?.[2] !== undefined ? (lexed.comments[Number(from[2])] ?? '').split(/\bhelo=/i)[0] : ''
 
   let ip: string | null = comment.match(/\[([0-9a-f:.]+|ipv6:[0-9a-f:.]+)\]/i)?.[1] ?? null
   let host: string | null = null
-  for (const token of comment.replace(/\[[^\]]*\]/g, ' ').split(/[\s,]+/).filter(Boolean)) {
+  for (const token of comment.replace(/\[[^\]]*\]/g, ' ').split(/[\s,()]+/).filter(Boolean)) {
     if (isIp(token)) {
       ip ??= token
-    } else if (!host && HOSTNAME.test(token) && !/^helo=/i.test(token)) {
+    } else if (!host && HOSTNAME.test(token)) {
       host = token.replace(/\.$/, '').toLowerCase()
     }
   }
 
   // The by and for clauses come after the from clause and its comment.
-  const rest = from ? text.slice(from[0].length) : text
+  const rest = plain(from ? clauses.slice(from[0].length) : clauses, lexed)
   const by = rest.match(/(?:^|\s)by\s+([^\s;()]+)/i)?.[1]?.toLowerCase() ?? null
   const forAddress = rest.match(/(?:^|\s)for\s+<?([^\s<>;]+@[^\s<>;]+)>?/i)?.[1]?.toLowerCase() ?? null
 
@@ -87,18 +172,14 @@ export interface AuthResults {
  * Splits an `Authentication-Results` header (RFC 8601), such as
  * `mx.example; dkim=pass header.i=@example.org header.s=s1; spf=pass smtp.mailfrom=a@example.org`.
  *
- * Comments in parentheses are dropped first, so a comment can't add a result
- * or a property.
+ * Comments are dropped and quoted strings are kept whole, so neither can add a
+ * result or a property: a `;` or `header.d=` inside a quoted value, such as a
+ * sender's quoted local part in `smtp.mailfrom`, stays part of that value.
  */
 export function parseAuthResults(value: string): AuthResults {
-  let text = value.replace(/\s+/g, ' ')
-  // Comments may nest; strip the innermost until none remain.
-  for (let previous = ''; previous !== text; ) {
-    previous = text
-    text = text.replace(/\([^()]*\)/g, ' ')
-  }
-  const [head = '', ...parts] = text.split(';')
-  const authservId = head.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+  const lexed = lex(value)
+  const [head = '', ...parts] = lexed.text.split(';')
+  const authservId = plain(head, lexed).trim().split(/\s+/)[0]?.toLowerCase() ?? ''
   const results: AuthResult[] = []
   for (const part of parts) {
     const verdict = part.match(/^\s*([a-z0-9_-]+)\s*=\s*([a-z0-9_-]+)/i)
@@ -106,8 +187,9 @@ export function parseAuthResults(value: string): AuthResults {
       continue
     }
     const props: Record<string, string> = {}
-    for (const prop of part.slice(verdict[0].length).matchAll(/([a-z0-9_-]+\.[a-z0-9_.-]+)\s*=\s*("[^"]*"|[^\s;]+)/gi)) {
-      props[prop[1].toLowerCase()] = prop[2].replace(/^"|"$/g, '')
+    // Quoted strings are placeholders here, so a key can't be read from inside one.
+    for (const prop of part.slice(verdict[0].length).matchAll(/([a-z0-9_-]+\.[a-z0-9_.-]+)\s*=\s*(\uE001\d+\uE001|[^\s;\uE000\uE001]+)/gi)) {
+      props[prop[1].toLowerCase()] = plain(prop[2], lexed)
     }
     results.push({ method: verdict[1].toLowerCase(), result: verdict[2].toLowerCase(), props })
   }

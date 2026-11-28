@@ -41,6 +41,19 @@ describe('parseReceived', () => {
     expect(parseReceived('from helo.example (host.example [IPv6:2001:db8::1]) by mx.example; date').ip).toBe('2001:db8::1')
   })
 
+  it("ignores by and for clauses inside comments and quoted strings", () => {
+    // Exim records the sender's HELO in the comment, so nothing in it is a lookup.
+    expect(
+      parseReceived('from [198.51.100.7] (helo=x by evil.example for <forged@mydomain.example>) by mx.example (Postfix "by evil2.example") with ESMTPS id abc for <me@inbox.example>; date'),
+    ).toEqual({ helo: '[198.51.100.7]', host: null, ip: null, by: 'mx.example', for: 'me@inbox.example' })
+  })
+
+  it('reads the recorded host from a comment with nested comments and escapes', () => {
+    expect(
+      parseReceived('from helo.example (host.example (nested \\) text) [192.0.2.1]) by mx.example; date'),
+    ).toMatchObject({ helo: 'helo.example', host: 'host.example', ip: '192.0.2.1', by: 'mx.example' })
+  })
+
   it('reads a hop with no from clause', () => {
     expect(parseReceived('by 2002:a05:7108:63a1:b0:62f:c5fe:dec5 with SMTP id a1csp2206408gdr;        Tue, 17 Nov 2026 13:39:32 -0800 (PST)')).toEqual({
       helo: null,
@@ -78,6 +91,35 @@ describe('parseAuthResults', () => {
   it("doesn't let a comment add a result or a property", () => {
     const parsed = parseAuthResults('mx.example; spf=fail (dkim=pass header.d=mydomain.example; smtp.mailfrom=x@mydomain.example) smtp.mailfrom=x@attacker.example')
     expect(parsed.results).toEqual([{ method: 'spf', result: 'fail', props: { 'smtp.mailfrom': 'x@attacker.example' } }])
+  })
+
+  it('keeps a semicolon inside a quoted value', () => {
+    const parsed = parseAuthResults('mx.example; dkim=pass header.d=example.org header.foo="a;b"; spf=pass smtp.mailfrom=x@example.org')
+    expect(parsed.results.map((result) => result.method)).toEqual(['dkim', 'spf'])
+    expect(parsed.results[0].props['header.foo']).toBe('a;b')
+  })
+
+  it("can't be given a result by a sender's quoted local part", () => {
+    // The sender chooses the envelope sender, and a quoted local part may hold
+    // a semicolon, parentheses and text that looks like a result.
+    const parsed = parseAuthResults(
+      'mx.example; spf=pass smtp.mailfrom="x;dkim=pass header.d=mydomain.example (y)"@attacker.example; dkim=pass header.d=attacker.example',
+    )
+    expect(parsed.results.map((result) => `${result.method}=${result.result} ${dkimDomain(result) ?? ''}`.trim())).toEqual([
+      'spf=pass',
+      'dkim=pass attacker.example',
+    ])
+    expect(parsed.results[0].props['smtp.mailfrom']).toBe('x;dkim=pass header.d=mydomain.example (y)')
+  })
+
+  it("doesn't read a property from inside a quoted value", () => {
+    const parsed = parseAuthResults('mx.example; dkim=fail reason="signature mismatch header.d=mydomain.example" header.d=attacker.example')
+    expect(dkimDomain(parsed.results[0])).toBe('attacker.example')
+  })
+
+  it('unescapes quoted values and keeps parentheses inside them', () => {
+    const parsed = parseAuthResults('mx.example; dkim=pass header.d=example.org header.foo="a \\"(b)\\" c"')
+    expect(parsed.results[0].props['header.foo']).toBe('a "(b)" c')
   })
 
   it('reads header.d and drops the version and a trailing dot', () => {
