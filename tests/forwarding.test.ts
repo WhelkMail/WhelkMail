@@ -42,7 +42,7 @@ describe('parseReceived', () => {
   })
 
   it("ignores by and for clauses inside comments and quoted strings", () => {
-    // Exim records the sender's HELO in the comment, so nothing in it is a lookup.
+    // Exim records the sender's HELO in the comment, so nothing after helo= is a lookup.
     expect(
       parseReceived('from [198.51.100.7] (helo=x by evil.example for <forged@mydomain.example>) by mx.example (Postfix "by evil2.example") with ESMTPS id abc for <me@inbox.example>; date'),
     ).toEqual({ helo: '[198.51.100.7]', host: null, ip: null, by: 'mx.example', for: 'me@inbox.example' })
@@ -59,6 +59,28 @@ describe('parseReceived', () => {
       parseReceived('from helo.example (peer.example [192.0.2.1]) by mx.example with SMTP id "abc for <forged@example.org>" for <real@example.org>; date'),
     ).toMatchObject({ by: 'mx.example', for: 'real@example.org' })
     expect(parseReceived('from helo.example (peer.example [192.0.2.1]) by mx.example for <"a b"@example.org>; date').for).toBe('a b@example.org')
+  })
+
+  it('returns only valid IP addresses', () => {
+    const ipOf = (literal: string) => parseReceived(`from helo.example (host.example ${literal}) by mx.example; date`).ip
+    for (const invalid of ['[999.999.999.999]', '[256.1.1.1]', '[01.2.3.4]', '[1.2.3]', '[::::]', '[1::2::3]', '[12345::1]', '[1:2:3:4:5:6:7:8:9]', '[::ffff:999.1.1.1]', '999.999.999.999', '::::']) {
+      expect(ipOf(invalid), invalid).toBeNull()
+    }
+    for (const [literal, ip] of [
+      ['[192.0.2.1]', '192.0.2.1'],
+      ['[0.0.0.0]', '0.0.0.0'],
+      ['[IPv6:2001:DB8::1]', '2001:db8::1'],
+      ['[2001:db8:0:0:0:0:0:1]', '2001:db8:0:0:0:0:0:1'],
+      ['[::1]', '::1'],
+      ['[::ffff:192.0.2.1]', '::ffff:192.0.2.1'],
+      ['192.0.2.1', '192.0.2.1'],
+    ]) {
+      expect(ipOf(literal), literal).toBe(ip)
+    }
+  })
+
+  it("doesn't read an invalid IP as the host", () => {
+    expect(parseReceived('from helo.example (999.999.999.999) by mx.example; date')).toMatchObject({ host: null, ip: null })
   })
 
   it('reads a hop with no from clause', () => {

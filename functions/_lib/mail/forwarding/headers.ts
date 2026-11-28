@@ -24,12 +24,54 @@ export interface ReceivedHeader {
   for: string | null
 }
 
-const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/
-const IPV6 = /^(?:ipv6:)?[0-9a-f]*:[0-9a-f:.]+$/i
 const HOSTNAME = /^[a-z0-9_](?:[a-z0-9_-]*[a-z0-9_])?(?:\.[a-z0-9_](?:[a-z0-9_-]*[a-z0-9_])?)+\.?$/i
 
-const isIp = (token: string): boolean => IPV4.test(token) || IPV6.test(token)
-const stripIpv6Prefix = (ip: string): string => ip.replace(/^ipv6:/i, '')
+/** A dotted-quad IPv4 address: four decimal octets from 0 to 255, no leading zeros. */
+function isIPv4(value: string): boolean {
+  const octets = value.split('.')
+  return octets.length === 4 && octets.every((octet) => /^(?:0|[1-9]\d{0,2})$/.test(octet) && Number(octet) <= 255)
+}
+
+/**
+ * An IPv6 address in any RFC 4291 text form: eight groups of up to four hex
+ * digits, at most one `::`, and optionally an IPv4 address as the last 32 bits.
+ */
+function isIPv6(value: string): boolean {
+  let address = value
+  const lastColon = address.lastIndexOf(':')
+  if (lastColon === -1) {
+    return false
+  }
+  const tail = address.slice(lastColon + 1)
+  if (tail.includes('.')) {
+    if (!isIPv4(tail)) {
+      return false
+    }
+    // The IPv4 part stands for the last two groups.
+    address = `${address.slice(0, lastColon + 1)}0:0`
+  }
+  const halves = address.split('::')
+  if (halves.length > 2) {
+    return false
+  }
+  const groups = halves.flatMap((half) => (half === '' ? [] : half.split(':')))
+  if (!groups.every((group) => /^[0-9a-f]{1,4}$/i.test(group))) {
+    return false
+  }
+  return halves.length === 2 ? groups.length <= 7 : groups.length === 8
+}
+
+/** A valid IP address in canonical case, without an `IPv6:` prefix, or null. */
+function validIp(token: string): string | null {
+  const address = token.replace(/^ipv6:/i, '')
+  if (isIPv4(address)) {
+    return address
+  }
+  return isIPv6(address) ? address.toLowerCase() : null
+}
+
+/** Shaped like an IP address, valid or not: never read as a host name. */
+const looksLikeIp = (token: string): boolean => /^[\d.]+$/.test(token) || token.includes(':')
 
 // Placeholders for comments and quoted strings, which can't occur in the text
 // itself: lex() removes these characters from the input first.
@@ -144,13 +186,16 @@ export function parseReceived(value: string): ReceivedHeader {
   const from = clauses.match(/^from\s+([^\s\uE000\uE001]+)(?:\s*\uE000(\d+)\uE000)?/i)
   const helo = from?.[1] ?? null
   // Anything from `helo=` on (Exim's format) is the sender's claim, not a lookup.
-  const comment = from?.[2] !== undefined ? (lexed.comments[Number(from[2])] ?? '').split(/\bhelo=/i)[0] : ''
+  const recorded = from?.[2] !== undefined ? (lexed.comments[Number(from[2])] ?? '').split(/\bhelo=/i)[0] : ''
 
-  let ip: string | null = comment.match(/\[([0-9a-f:.]+|ipv6:[0-9a-f:.]+)\]/i)?.[1] ?? null
+  let ip: string | null = null
+  for (const literal of recorded.matchAll(/\[([^\]]*)\]/g)) {
+    ip ??= validIp(literal[1])
+  }
   let host: string | null = null
-  for (const token of comment.replace(/\[[^\]]*\]/g, ' ').split(/[\s,()]+/).filter(Boolean)) {
-    if (isIp(token)) {
-      ip ??= token
+  for (const token of recorded.replace(/\[[^\]]*\]/g, ' ').split(/[\s,()]+/).filter(Boolean)) {
+    if (looksLikeIp(token)) {
+      ip ??= validIp(token)
     } else if (!host && HOSTNAME.test(token)) {
       host = token.replace(/\.$/, '').toLowerCase()
     }
@@ -168,7 +213,7 @@ export function parseReceived(value: string): ReceivedHeader {
   return {
     helo,
     host,
-    ip: ip ? stripIpv6Prefix(ip).toLowerCase() : null,
+    ip,
     by,
     for: forAddress,
   }
