@@ -221,8 +221,13 @@ export function parseAuthResults(value: string): AuthResults {
 /**
  * Domain a DKIM result is for: `header.d`, or the domain of `header.i`. Lower
  * case, without a trailing dot.
+ *
+ * `header.i` only counts when it holds an `@`: an identity split by whitespace
+ * (`user @ example.org`) leaves a fragment, which must give no domain rather
+ * than the wrong one.
  */
 export function dkimDomain(result: AuthResult): string | null {
-  const domain = result.props['header.d'] ?? result.props['header.i']?.split('@').pop() ?? null
+  const identity = result.props['header.i']
+  const domain = result.props['header.d'] ?? (identity?.includes('@') ? identity.slice(identity.lastIndexOf('@') + 1) : null)
   return domain ? domain.toLowerCase().replace(/\.$/, '') : null
 }

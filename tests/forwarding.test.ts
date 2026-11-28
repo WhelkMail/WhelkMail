@@ -147,6 +147,16 @@ describe('parseAuthResults', () => {
     expect(parseReceived('from helo.example (peer.example [192.0.2.1]) by mx.example for <"a  b"@example.org>; date').for).toBe('a  b@example.org')
   })
 
+  it('gives no DKIM domain for an identity split by whitespace or a comment', () => {
+    for (const value of [
+      'mx.example; dkim=pass header.i=mydomain.example @ attacker.example',
+      'mx.example; dkim=pass header.i=user @ example.org',
+      'mx.example; dkim=pass header.i=user@(comment)example.org',
+    ]) {
+      expect(dkimDomain(parseAuthResults(value).results[0])).toBeNull()
+    }
+  })
+
   it('accepts a method version', () => {
     const parsed = parseAuthResults('mx.example; dkim/1=pass header.d=example.org; spf / 1 = fail smtp.mailfrom=x@example.org')
     expect(parsed.results.map((result) => `${result.method}=${result.result}`)).toEqual(['dkim=pass', 'spf=fail'])
